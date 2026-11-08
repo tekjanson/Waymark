@@ -3,7 +3,7 @@
    and the 50 selectable layout architectures (mode-1 … mode-50).
    ============================================================ */
 
-import { el, showToast } from './ui.js';
+import { el, showToast, copyToClipboard } from './ui.js';
 import { api } from './api-client.js';
 import * as userData from './user-data.js';
 import * as collab from './collab.js';
@@ -117,6 +117,17 @@ function initWayboard(deps = {}) {
         const target = group ? { group, label } : { contactEmail, label };
         await selectTarget(target, host);
         await startCall();
+      }
+    });
+    window.addEventListener('waymark:select-wayside-target', async (e) => {
+      const detail = e.detail || {};
+      const contactEmail = String(detail.contactEmail || 'assistant@waymark.internal').trim().toLowerCase();
+      const group = String(detail.group || '').trim();
+      const label = String(detail.label || (contactEmail === 'assistant@waymark.internal' ? 'Waymark AI' : contactEmail)).trim();
+      await renderWayside({ autoSelect: false }).catch(() => {});
+      const host = document.getElementById('home-wayside');
+      if (host) {
+        await selectTarget(group ? { group, label } : { contactEmail, label, isAgent: contactEmail === 'assistant@waymark.internal' }, host);
       }
     });
   }
@@ -1089,6 +1100,7 @@ async function selectTarget(target, host) {
   const user = api.auth.getUser?.() || {};
   const displayName = user.name || (user.email ? user.email.split('@')[0] : 'Waymarker');
   const userEmail = collab.currentEmail();
+  const isAgentTarget = Boolean(target.isAgent || target.contactEmail === 'assistant@waymark.internal');
 
   const widget = new SocialChatWidget({
     mode: 'embedded',
@@ -1103,9 +1115,11 @@ async function selectTarget(target, host) {
     showMinimize: false,
     showSheetLink: true,
     showConnectDrive: true,
+    showShareAgent: isAgentTarget,
     onClose: () => deselectTarget(host),
     onOpenSheet: () => openSocialSheet(),
     onConnectDrive: () => connectSharedLedgerFromWayside(host),
+    onShareAgent: () => openShareAgentModal(host),
     onPeerMessage: () => {
       setTimeout(() => {
         refreshWaysideSocial(host).catch(() => {});
@@ -1332,6 +1346,178 @@ async function openSocialSheet() {
   } catch (err) {
     showToast(`Could not open sheet: ${err.message}`, 'error');
   }
+}
+
+async function ensurePrivateGuestAgentLedger(guestEmail) {
+  const normalizedGuest = String(guestEmail || '').trim().toLowerCase();
+  const pairEmails = ['assistant@waymark.internal', normalizedGuest].sort();
+  const fileName = `.waymark-ledger-contact-pair-${pairEmails.join('--')}`;
+  try {
+    const existing = await api.drive.findFilesGlobal(fileName);
+    if (Array.isArray(existing) && existing[0]?.id) {
+      return existing[0].id;
+    }
+  } catch {
+    /* fallback to creating the spreadsheet */
+  }
+  const sharedDocsHeaders = [
+    'Document_ID', 'Document_Title', 'Waymark_Type', 'Shared_With_Email',
+    'Group', 'Permission_Level', 'Shared_Timestamp', 'Status',
+  ];
+  const presenceHeaders = ['User_Email', 'Display_Name', 'Group', 'Online_Status', 'Last_Heartbeat_UTC', 'Active_Waymark_ID'];
+  const chatHeaders = ['Message_ID', 'Timestamp_UTC', 'Sender_Email', 'Target_Group_Or_Contact', 'Message_Text', 'Attached_Waymark_Link'];
+  const signalingHeaders = ['Session_ID', 'Caller_Email', 'Callee_Email', 'SDP_Offer_Answer_JSON', 'ICE_Candidates_JSON', 'Call_Status'];
+  const created = await api.sheets.createSpreadsheet(fileName, [sharedDocsHeaders], null);
+  const sheetId = created.spreadsheetId || created.id;
+  await api.sheets.writeTab(sheetId, 'Shared_Docs', [sharedDocsHeaders]);
+  await api.sheets.writeTab(sheetId, 'Presence', [presenceHeaders]);
+  await api.sheets.writeTab(sheetId, 'Chat', [chatHeaders]);
+  await api.sheets.writeTab(sheetId, 'WebRTC_Signaling', [signalingHeaders]);
+  return sheetId;
+}
+
+async function openShareAgentModal(host) {
+  let sheetId = _activeLedgerId;
+  if (!sheetId) {
+    try {
+      const ensured = await collab.ensureShareLedger(_activeTarget || {
+        contactEmail: 'assistant@waymark.internal',
+        label: 'Waymark AI',
+      });
+      sheetId = ensured?.sheetId || '';
+      if (sheetId) {
+        _activeLedgerId = sheetId;
+        if (_waysideWidget) {
+          _waysideWidget.setSignaling(sheetId, collab.createLedgerSignal(sheetId));
+          _waysideWidget.setSubtitle(`Linked: ${sheetId}`);
+        }
+      }
+    } catch (err) {
+      showToast(`Could not prepare AI ledger: ${err.message}`, 'error');
+      return;
+    }
+  }
+
+  const existingModal = document.getElementById('wayside-share-agent-modal');
+  if (existingModal) existingModal.remove();
+
+  const defaultInviteLink = sheetId
+    ? api.drive.generateShareLink('', '', undefined, {
+        ledger: sheetId,
+        from: 'assistant@waymark.internal',
+      })
+    : '';
+
+  const modeSelect = el('select', {
+    id: 'wayside-share-agent-mode',
+    className: 'input',
+  }, [
+    el('option', { value: 'shared' }, ['Shared Household AI Chat — same chat & files']),
+    el('option', { value: 'private' }, ['Dedicated 1-on-1 AI Chat — private ledger']),
+  ]);
+
+  const emailInput = el('input', {
+    id: 'wayside-share-agent-email',
+    type: 'email',
+    className: 'input',
+    placeholder: 'collaborator@gmail.com',
+  });
+
+  const linkInput = el('input', {
+    id: 'wayside-share-agent-link',
+    type: 'text',
+    className: 'input',
+    readOnly: true,
+    value: defaultInviteLink,
+  });
+
+  const copyBtn = el('button', {
+    id: 'wayside-share-agent-copy-btn',
+    type: 'button',
+    className: 'btn btn-secondary',
+    on: {
+      click: async () => {
+        if (!linkInput.value) return;
+        await copyToClipboard(linkInput.value);
+      },
+    },
+  }, ['📋 Copy Link']);
+
+  const grantBtn = el('button', {
+    id: 'wayside-share-agent-grant-btn',
+    type: 'button',
+    className: 'btn btn-primary',
+    on: {
+      click: async () => {
+        const email = String(emailInput.value || '').trim().toLowerCase();
+        if (!email || !email.includes('@')) {
+          showToast('Enter a valid Google email address to share with', 'error');
+          return;
+        }
+        grantBtn.disabled = true;
+        try {
+          let targetLedgerId = sheetId;
+          if (modeSelect.value === 'private') {
+            targetLedgerId = await ensurePrivateGuestAgentLedger(email);
+          }
+          await api.drive.createDrivePermission(targetLedgerId, email, 'writer');
+          const inviteLink = api.drive.generateShareLink('', '', undefined, {
+            ledger: targetLedgerId,
+            from: 'assistant@waymark.internal',
+          });
+          linkInput.value = inviteLink;
+          await copyToClipboard(inviteLink);
+          showToast(`Shared Waymark AI with ${email} — invite link copied!`, 'success');
+          if (host) await refreshWaysideSocial(host).catch(() => {});
+        } catch (err) {
+          showToast(`Could not share Waymark AI: ${err.message}`, 'error');
+        } finally {
+          grantBtn.disabled = false;
+        }
+      },
+    },
+  }, ['🤝 Share & Copy Invite Link']);
+
+  const closeModal = () => {
+    modal.remove();
+  };
+
+  const modal = el('div', {
+    id: 'wayside-share-agent-modal',
+    className: 'modal-overlay',
+    on: {
+      click: (e) => {
+        if (e.target === modal) closeModal();
+      },
+    },
+  }, [
+    el('div', { className: 'modal' }, [
+      el('div', { className: 'modal-header' }, [
+        el('h3', {}, ['🤝 Share Waymark AI Agent']),
+        el('button', {
+          type: 'button',
+          className: 'btn-icon wayside-share-agent-close',
+          title: 'Close',
+          on: { click: closeModal },
+        }, ['✕']),
+      ]),
+      el('div', { className: 'modal-body' }, [
+        el('p', { className: 'text-muted' }, [
+          'Grant a family member or collaborator access to your Waymark AI agent. Once shared, they can open the invite link on any device to authorize the ledger and chat with your agent.',
+        ]),
+        el('label', { className: 'form-label', htmlFor: 'wayside-share-agent-mode' }, ['Sharing Mode']),
+        modeSelect,
+        el('label', { className: 'form-label', htmlFor: 'wayside-share-agent-email' }, ['Collaborator Google Email']),
+        emailInput,
+        el('div', { className: 'modal-actions' }, [grantBtn]),
+        el('label', { className: 'form-label', htmlFor: 'wayside-share-agent-link' }, ['One-Time Invite Link']),
+        el('div', { className: 'wayside-share-link-row' }, [linkInput, copyBtn]),
+      ]),
+    ]),
+  ]);
+
+  document.body.append(modal);
+  emailInput.focus();
 }
 
 export {

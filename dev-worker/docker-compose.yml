@@ -119,7 +119,7 @@ services:
       - GIT_EMAIL=${GIT_EMAIL:-waymark-agent@container.local}
       - GIT_NAME=${GIT_NAME:-Waymark Agent}
 
-    restart: unless-stopped
+    restart: "no"
 
     volumes:
       # ── Workspace ──────────────────────────────────────────────────────────
@@ -216,7 +216,7 @@ services:
       - GIT_EMAIL=${GIT_EMAIL:-waymark-agent@container.local}
       - GIT_NAME=${GIT_NAME:-Waymark Agent}
 
-    restart: unless-stopped
+    restart: "no"
 
     volumes:
       - ${WORKSPACE_PATH:-/home/tekjanson/Documents/Code/Waymark}:/workspace

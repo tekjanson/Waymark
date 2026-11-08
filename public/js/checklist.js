@@ -1125,10 +1125,32 @@ function openDuplicateModal() {
     const is403 = err.status === 403 || (err.message && err.message.includes('Permission denied'));
     if (is403) {
       showToast('Permission denied — open this file with the Drive picker to grant access', 'error');
-      itemsEl.innerHTML = `<p class="empty-state">Permission denied. Use the Drive picker to open this sheet.</p>`;
+      itemsEl.replaceChildren(
+        el('div', { className: 'empty-state' }, [
+          el('p', {}, ['Permission denied. Use the Drive picker to open this sheet.']),
+          el('button', {
+            type: 'button',
+            className: 'btn btn-primary authorize-shared-sheet-btn',
+            on: {
+              click: async () => {
+                try {
+                  const picked = await api.picker.pickSpreadsheetForInvite({ fileId: sheetId });
+                  if (picked?.id) {
+                    await loadSheet(picked.id, { forceRender: true });
+                  }
+                } catch (pickErr) {
+                  showToast(`Could not authorize sheet: ${pickErr.message}`, 'error');
+                }
+              },
+            },
+          }, ['🔓 Authorize Shared Sheet in Google Drive']),
+        ])
+      );
     } else {
       showToast(`Failed to load sheet: ${err.message}`, 'error');
-      itemsEl.innerHTML = `<p class="empty-state">Could not load this sheet.</p>`;
+      itemsEl.replaceChildren(
+        el('p', { className: 'empty-state' }, ['Could not load this sheet.'])
+      );
     }
     if (templateBadge) templateBadge.classList.add('hidden');
   }

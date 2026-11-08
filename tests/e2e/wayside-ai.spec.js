@@ -49,3 +49,34 @@ const { setupApp } = require('../helpers/test-utils');
     ]);
   });
 
+  test('Waymark AI displays Share Agent button, opens Share Agent modal, grants Drive permission, and generates invite link', async ({ page }) => {
+    await setupApp(page);
+    await page.waitForSelector('#home-wayside', { timeout: 5_000 });
+
+    const aiAvatar = page.locator('#home-wayside .avatar-ai');
+    await aiAvatar.click();
+
+    const shareAgentBtn = page.locator('#wayside-share-agent-btn');
+    await expect(shareAgentBtn).toBeVisible();
+    await expect(shareAgentBtn).toContainText('Share Agent');
+
+    await shareAgentBtn.click();
+
+    const modal = page.locator('#wayside-share-agent-modal');
+    await expect(modal).toBeVisible();
+    await expect(modal.locator('h3')).toContainText('Share Waymark AI Agent');
+
+    await page.fill('#wayside-share-agent-email', 'spouse@gmail.com');
+    await page.click('#wayside-share-agent-grant-btn');
+
+    const linkVal = await page.inputValue('#wayside-share-agent-link');
+    expect(linkVal).toContain('ledger=');
+    expect(linkVal).toContain('from=assistant%40waymark.internal');
+
+    const permissionRecords = await page.evaluate(() =>
+      (window.__WAYMARK_RECORDS || []).filter(r => r.type === 'drive-permission')
+    );
+    expect(permissionRecords.some(r => r.email === 'spouse@gmail.com' && r.role === 'writer')).toBe(true);
+  });
+
+

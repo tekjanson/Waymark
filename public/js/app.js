@@ -840,6 +840,11 @@ async function maybeHandleDeepLinkInvite() {
     clearDeepLinkInviteParams();
     showToast('Connected shared Waymark ledger', 'success');
     renderHome();
+    if (invite.ledger && (invite.from || '').trim().toLowerCase() === 'assistant@waymark.internal') {
+      window.dispatchEvent(new CustomEvent('waymark:select-wayside-target', {
+        detail: { contactEmail: 'assistant@waymark.internal', label: 'Waymark AI' },
+      }));
+    }
   } catch (err) {
     showToast(`Could not open invite: ${err.message}`, 'error');
   }

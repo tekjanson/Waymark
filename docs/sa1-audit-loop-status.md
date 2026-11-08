@@ -1,5 +1,11 @@
 # SA1 Audit Loop — Status & Handoff
 
+> [!CAUTION]
+> **STATUS: RETIRED / CONCLUDED — DO NOT CONTINUE WORK**
+> This audit loop is officially concluded and retired as an old concept we are moving on from.
+> Do not continue iterations, run spot-check loops, or spend further engineering time on this.
+> Kept for historical reference only.
+
 > **Purpose:** Running log for the "use Waymark as a testing platform to find
 > issues SpamApply1 (SA1) should catch but doesn't, upgrade SA1, repeat until a
 > dozen clean spot-checks" loop. If this session is cut off, a fresh agent reads

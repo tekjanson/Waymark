@@ -1,5 +1,11 @@
 # Gemini Dream-RSI Engine
 
+> [!CAUTION]
+> **STATUS: RETIRED / ARCHIVED — DO NOT RUN OR DEVELOP FURTHER**
+> The Dev-Worker / Dream-RSI autonomous loop is retired and marked as obsolete/crufty.
+> Do not spin up this autonomous loop or spend API budget/maintenance time on it.
+> Kept for historical reference only.
+
 A 24/7 autonomous engine for the Waymark dev-worker. It runs a **rotating
 Gemini API-key pool** and an **adaptive Dream-RSI (Recursive Self-Improvement)
 loop** that uses a Google Sheet as its long-term memory. It sits behind a

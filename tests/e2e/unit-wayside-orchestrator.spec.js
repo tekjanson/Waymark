@@ -315,3 +315,131 @@ const ROOT = path.resolve(__dirname, '../..');
     expect(orch.presenceTimer).toBeNull();
   });
 
+  test('shouldRespondToMessage responds to all 1-on-1 messages and only @mentions in group ledgers', async () => {
+    const { WaysideOrchestrator } = await import('../../scripts/wayside-orchestrator.mjs');
+
+    // 1-on-1 ledger: always responds
+    expect(WaysideOrchestrator.shouldRespondToMessage('Can you add milk to the list?', { isGroupLedger: false })).toBe(true);
+    expect(WaysideOrchestrator.shouldRespondToMessage('Hey honey I am on my way home', { isGroupLedger: false })).toBe(true);
+
+    // Group ledger: ignores human-to-human chatter without mention
+    expect(WaysideOrchestrator.shouldRespondToMessage('Hey honey I am on my way home', { isGroupLedger: true })).toBe(false);
+    expect(WaysideOrchestrator.shouldRespondToMessage('Did you pick up the kids?', { isGroupLedger: true })).toBe(false);
+
+    // Group ledger: responds to @waymark, @agent, @assistant, Waymark AI, or @<template>
+    expect(WaysideOrchestrator.shouldRespondToMessage('@waymark add milk to the grocery list', { isGroupLedger: true })).toBe(true);
+    expect(WaysideOrchestrator.shouldRespondToMessage('Hey Waymark can you plan dinners for this week?', { isGroupLedger: true })).toBe(true);
+    expect(WaysideOrchestrator.shouldRespondToMessage('Waymark AI please create a budget sheet', { isGroupLedger: true })).toBe(true);
+    expect(WaysideOrchestrator.shouldRespondToMessage('Please ask @recipe for a pasta dish', { isGroupLedger: true })).toBe(true);
+  });
+
+  test('buildAgyPrompt includes shareWith collaborator emails for automatic sharing', async () => {
+    const { buildAgyPrompt } = await import('../../scripts/agy-agent-runner.mjs');
+    const prompt = buildAgyPrompt({
+      task: 'Create a shared family meal planner',
+      templateKey: 'meal',
+      shareWith: ['spouse@gmail.com', 'host@gmail.com'],
+    });
+
+    expect(prompt).toContain('Household / Collaborator Share List');
+    expect(prompt).toContain('spouse@gmail.com, host@gmail.com');
+  });
+
+  test('discoverAllLedgers provisions host, guest, and group ledgers and grants writer permissions', async () => {
+    const http = require('http');
+    const { WaysideOrchestrator } = await import('../../scripts/wayside-orchestrator.mjs');
+
+    const tmpToken = path.join(ROOT, 'tests', 'fixtures', 'tmp-orch-multi-oauth.json');
+    fs.writeFileSync(tmpToken, JSON.stringify({
+      access_token: 'mock-access-token',
+      expiry_date: Date.now() + 3600_000,
+    }));
+
+    const permissionGrants = [];
+    const server = http.createServer((req, res) => {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        res.setHeader('Content-Type', 'application/json');
+        if (req.url.startsWith('/drive/v3/about')) {
+          res.end(JSON.stringify({ user: { emailAddress: 'host@gmail.com' } }));
+        } else if (req.url.includes('/permissions')) {
+          const match = req.url.match(/\/drive\/v3\/files\/([^/?]+)\/permissions/);
+          permissionGrants.push({
+            fileId: match ? decodeURIComponent(match[1]) : '',
+            body: body ? JSON.parse(body) : null,
+          });
+          res.end(JSON.stringify({ id: 'perm-1' }));
+        } else if (req.url.startsWith('/drive/v3/files')) {
+          res.end(JSON.stringify({ files: [] }));
+        } else {
+          res.writeHead(404);
+          res.end('{}');
+        }
+      });
+    });
+
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const port = server.address().port;
+
+    const origTokenPath = process.env.WAYMARK_OAUTH_TOKEN_PATH;
+    const origDriveBase = process.env.DRIVE_BASE;
+    const origFetch = globalThis.fetch;
+
+    try {
+      process.env.WAYMARK_OAUTH_TOKEN_PATH = tmpToken;
+      process.env.DRIVE_BASE = `http://127.0.0.1:${port}/drive/v3/files`;
+
+      let counter = 0;
+      globalThis.fetch = async (url, opts = {}) => {
+        const u = String(url);
+        if (u === 'https://sheets.googleapis.com/v4/spreadsheets' && opts.method === 'POST') {
+          counter += 1;
+          return new Response(JSON.stringify({ spreadsheetId: `multi-ledger-${counter}` }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (u.startsWith('https://sheets.googleapis.com/v4/spreadsheets/multi-ledger-')) {
+          return new Response(JSON.stringify({
+            sheets: [
+              { properties: { title: 'Shared_Docs' } },
+              { properties: { title: 'Presence' } },
+              { properties: { title: 'Chat' } },
+              { properties: { title: 'WebRTC_Signaling' } },
+            ],
+            values: [['Header']],
+          }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return origFetch(url, opts);
+      };
+
+      const ledgers = await WaysideOrchestrator.discoverAllLedgers({
+        allowedUsers: ['spouse@gmail.com'],
+        groups: ['Family'],
+      });
+
+      expect(ledgers.length).toBe(3);
+      expect(ledgers[0]).toMatchObject({ sheetId: 'multi-ledger-1', userEmail: 'host@gmail.com', isGroupLedger: false });
+      expect(ledgers[1]).toMatchObject({ sheetId: 'multi-ledger-2', userEmail: 'spouse@gmail.com', isGroupLedger: false });
+      expect(ledgers[2]).toMatchObject({ sheetId: 'multi-ledger-3', group: 'Family', isGroupLedger: true });
+
+      const grantedEmails = permissionGrants.map(g => `${g.fileId}:${g.body?.emailAddress}:${g.body?.role}`);
+      expect(grantedEmails).toContain('multi-ledger-1:spouse@gmail.com:writer');
+      expect(grantedEmails).toContain('multi-ledger-2:spouse@gmail.com:writer');
+      expect(grantedEmails).toContain('multi-ledger-3:spouse@gmail.com:writer');
+    } finally {
+      globalThis.fetch = origFetch;
+      if (origTokenPath === undefined) delete process.env.WAYMARK_OAUTH_TOKEN_PATH;
+      else process.env.WAYMARK_OAUTH_TOKEN_PATH = origTokenPath;
+      if (origDriveBase === undefined) delete process.env.DRIVE_BASE;
+      else process.env.DRIVE_BASE = origDriveBase;
+      if (fs.existsSync(tmpToken)) fs.unlinkSync(tmpToken);
+      await new Promise(resolve => server.close(resolve));
+    }
+  });
+
+

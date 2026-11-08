@@ -141,8 +141,11 @@ export function extractFileReferences(text) {
 /**
  * Build the prompt delivered to agy.
  */
-export function buildAgyPrompt({ task, templateKey, sheetId, context = '' }) {
+export function buildAgyPrompt({ task, templateKey, sheetId, context = '', shareWith = [] }) {
   const parts = [];
+  const validShareWith = (Array.isArray(shareWith) ? shareWith : [])
+    .map(e => String(e || '').trim().toLowerCase())
+    .filter(e => e && e.includes('@') && !e.endsWith('.internal') && !e.endsWith('.local'));
 
   parts.push(`You are Waymark AI, an autonomous data assistant.`);
   if (templateKey) {
@@ -159,11 +162,15 @@ export function buildAgyPrompt({ task, templateKey, sheetId, context = '' }) {
     parts.push(`Conversation context:\n${context}`);
   }
 
+  if (validShareWith.length > 0) {
+    parts.push(`Household / Collaborator Share List: ${validShareWith.join(', ')} (pass shareWith: ${JSON.stringify(validShareWith)} when creating sheets or docs so the requester and family have edit access).`);
+  }
+
   parts.push(`\nUser Request: ${task}`);
   parts.push(`\nInstructions:
 1. Use the Waymark MCP tools:
    - Discovering files: call waymark_list_files({ query?, type? }) to find existing sheets or docs.
-   - Creating new sheets: call waymark_create_sheet({ templateKey, title, seedRows? })
+   - Creating new sheets: call waymark_create_sheet({ templateKey, title, seedRows?, shareWith? })
    - Reading sheets: call waymark_get_sheet({ spreadsheetId, sheetTitle? })
    - Modifying rows: call waymark_update_entry({ spreadsheetId, rowIndex, updates }) using 1-based rowIndex (_rowIndex >= 1)
    - Appending rows: call waymark_add_entry({ spreadsheetId, entry })
@@ -270,11 +277,12 @@ export async function runAgyTask({
   templateKey = null,
   sheetId = null,
   context = '',
+  shareWith = [],
   model = DEFAULT_MODEL,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   cwd = ROOT,
 }) {
-  const prompt = buildAgyPrompt({ task, templateKey, sheetId, context });
+  const prompt = buildAgyPrompt({ task, templateKey, sheetId, context, shareWith });
   const start = Date.now();
   const { bin: agyBin, useShell } = resolveAgyBinary();
 
@@ -287,6 +295,9 @@ export async function runAgyTask({
   }
   if (!childEnv.WAYMARK_OAUTH_TOKEN_PATH && existsSync(defaultOAuth)) {
     childEnv.WAYMARK_OAUTH_TOKEN_PATH = defaultOAuth;
+  }
+  if (Array.isArray(shareWith) && shareWith.length > 0) {
+    childEnv.WAYMARK_AUTO_SHARE_EMAILS = shareWith.join(',');
   }
 
   // On Windows when agy resolves to a .cmd/.bat shim, invoke via powershell.exe with shell: false

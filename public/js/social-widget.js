@@ -79,6 +79,7 @@ export class SocialChatWidget {
     this.onClose = opts.onClose || (() => {});
     this.onOpenSheet = opts.onOpenSheet || (() => {});
     this.onConnectDrive = opts.onConnectDrive || (() => {});
+    this.onShareAgent = opts.onShareAgent || (() => {});
     this.onBeforeStartCall = opts.onBeforeStartCall || null;
     this.onPeerMessage = opts.onPeerMessage || null;
 
@@ -86,6 +87,7 @@ export class SocialChatWidget {
     this.showMinimize = opts.showMinimize !== undefined ? opts.showMinimize : (this.mode === 'floating');
     this.showSheetLink = opts.showSheetLink !== undefined ? !!opts.showSheetLink : (this.mode === 'embedded');
     this.showConnectDrive = opts.showConnectDrive !== undefined ? !!opts.showConnectDrive : (this.mode === 'embedded');
+    this.showShareAgent = Boolean(opts.showShareAgent);
 
     this._chatLog = [];
     this._unreadCount = 0;
@@ -252,6 +254,16 @@ export class SocialChatWidget {
         on: { click: () => this.onConnectDrive() },
       }, ['📥 Connect']);
       linkActions.append(this.connectBtn);
+    }
+
+    if (this.showShareAgent) {
+      this.shareAgentBtn = el('button', {
+        className: 'btn btn-muted',
+        id: `${idPrefix}-share-agent-btn`,
+        title: 'Share this Waymark AI agent with family or collaborators',
+        on: { click: () => this.onShareAgent() },
+      }, ['🤝 Share Agent']);
+      linkActions.append(this.shareAgentBtn);
     }
 
     this.settingsBtn = el('button', {

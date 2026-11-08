@@ -765,7 +765,22 @@ async function handleWaymarkUpdateEntry({ spreadsheetId, sheetTitle, rowIndex, u
   return { success: true, updated: results, rowIndex: parsedRowIndex };
 }
 
+function mergeAutoShareEmails(shareWith = []) {
+  const envRaw = [
+    process.env.WAYMARK_AUTO_SHARE_EMAILS || "",
+    process.env.WAYSIDE_ALLOWED_USERS || "",
+  ].join(",");
+  const combined = [
+    ...(Array.isArray(shareWith) ? shareWith : []),
+    ...envRaw.split(","),
+  ]
+    .map(e => String(e || "").trim().toLowerCase())
+    .filter(e => e && e.includes("@") && !e.endsWith(".internal") && !e.endsWith(".local"));
+  return [...new Set(combined)];
+}
+
 async function handleWaymarkCreateSheet({ templateKey, title, parentFolderId, shareWith = [], seedRows = [] }) {
+  shareWith = mergeAutoShareEmails(shareWith);
   // Fall back to the env-configured default folder so sheets land in the shared Waymark Drive folder
   const effectiveFolderId = parentFolderId || process.env.WAYMARK_PARENT_FOLDER_ID || null;
 
@@ -894,6 +909,7 @@ async function handleWaymarkCreateSheet({ templateKey, title, parentFolderId, sh
 
 async function handleWaymarkCreateDoc({ title, body, parentFolderId, shareWith = [] }) {
   if (!title) throw new Error("title is required.");
+  shareWith = mergeAutoShareEmails(shareWith);
 
   const effectiveFolderId = parentFolderId || process.env.WAYMARK_PARENT_FOLDER_ID || null;
 

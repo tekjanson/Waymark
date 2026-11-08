@@ -945,7 +945,7 @@ export class SheetWebRtcPeer {
         this._diagEvent('broadcast-send', { sent });
         if (sent > 0) return sent;
         // Fallback: persist only explicit notification payloads into notification slot (block+3)
-        const isNotif = typeof titleOrPayload === 'string' || titleOrPayload?.type === 'notification';
+        const isNotif = typeof opts === 'string' || opts?.type === 'notification';
         if (this.block > 0 && isNotif) {
             this._writeCell(`${this.tabName}!T${this.block + 3}`, json).catch(() => {});
         }

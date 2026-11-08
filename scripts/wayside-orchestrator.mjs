@@ -294,25 +294,107 @@ async function resolveCurrentUserEmail(existingToken = null) {
   return '';
 }
 
+function parseEmailList(raw) {
+  if (!raw) return [];
+  const items = Array.isArray(raw) ? raw : String(raw).split(',');
+  const out = [];
+  const seen = new Set();
+  for (const item of items) {
+    const email = String(item || '').trim().toLowerCase();
+    if (email && email.includes('@') && !email.endsWith('.internal') && !email.endsWith('.local') && !seen.has(email)) {
+      seen.add(email);
+      out.push(email);
+    }
+  }
+  return out;
+}
+
+function parseGroupList(raw) {
+  if (!raw) return [];
+  const items = Array.isArray(raw) ? raw : String(raw).split(',');
+  const out = [];
+  const seen = new Set();
+  for (const item of items) {
+    const group = String(item || '').trim();
+    const lower = group.toLowerCase();
+    if (group && !seen.has(lower)) {
+      seen.add(lower);
+      out.push(group);
+    }
+  }
+  return out;
+}
+
+/**
+ * Grant Drive writer permissions on a spreadsheet or document to a list of emails.
+ * Best-effort: logs a warning on failure and never throws.
+ * @param {string} fileId
+ * @param {string[]} emails
+ * @param {string} [existingToken]
+ * @returns {Promise<string[]>} emails successfully granted access
+ */
+async function shareFileWithEmails(fileId, emails = [], existingToken = null) {
+  const targets = parseEmailList(emails);
+  if (!fileId || targets.length === 0) return [];
+  const granted = [];
+  try {
+    const token = existingToken || await getAuthToken();
+    const ownerEmail = await resolveCurrentUserEmail(token);
+    const driveFilesBase = process.env.DRIVE_BASE || 'https://www.googleapis.com/drive/v3/files';
+    for (const email of targets) {
+      if (ownerEmail && email === ownerEmail) continue;
+      try {
+        const res = await fetch(`${driveFilesBase}/${encodeURIComponent(fileId)}/permissions`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            type: 'user',
+            role: 'writer',
+            emailAddress: email,
+          }),
+        });
+        if (res.ok) {
+          granted.push(email);
+        }
+      } catch { /* best-effort per email */ }
+    }
+  } catch { /* best-effort */ }
+  return granted;
+}
+
 /**
  * Auto-discover an existing Wayside Share Ledger in Google Drive or provision one
- * using the canonical `.waymark-ledger-contact-pair:` naming from public/js/collab.js.
+ * using the canonical `.waymark-ledger-contact-pair:` (or `.waymark-ledger-group:`)
+ * naming from public/js/collab.js.
+ * @param {{ userEmail?: string, group?: string, shareWithEmails?: string[] }} [opts]
  * @returns {Promise<string>} spreadsheetId
  */
-export async function discoverOrCreateWaysideLedger() {
+export async function discoverOrCreateWaysideLedger(opts = {}) {
   const token = await getAuthToken();
   const driveFilesBase = process.env.DRIVE_BASE || 'https://www.googleapis.com/drive/v3/files';
   const agentEmailLower = AGENT_EMAIL.toLowerCase();
-  const userEmail = await resolveCurrentUserEmail(token);
+  const groupName = String(opts.group || '').trim();
+  const explicitUserEmail = String(opts.userEmail || '').trim().toLowerCase();
+  const userEmail = explicitUserEmail || await resolveCurrentUserEmail(token);
 
-  const ledgerKey = userEmail && userEmail !== agentEmailLower
-    ? `contact-pair:${[userEmail, agentEmailLower].sort().join('::')}`
-    : `contact:${agentEmailLower}`;
+  const ledgerKey = groupName
+    ? `group:${groupName.toLowerCase()}`
+    : (userEmail && userEmail !== agentEmailLower
+      ? `contact-pair:${[userEmail, agentEmailLower].sort().join('::')}`
+      : `contact:${agentEmailLower}`);
   const canonicalTitle = ledgerFileName(ledgerKey);
-  const legacyTitle = ledgerFileName(`contact:${agentEmailLower}`);
+  const legacyTitle = !groupName && !explicitUserEmail ? ledgerFileName(`contact:${agentEmailLower}`) : '';
 
   const q = "name contains '.waymark-ledger-' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false";
   const url = `${driveFilesBase}?q=${encodeURIComponent(q)}&fields=files(id,name,createdTime,modifiedTime)&orderBy=createdTime&pageSize=100`;
+
+  const shareTargets = parseEmailList([
+    ...(opts.shareWithEmails || []),
+    explicitUserEmail,
+  ]);
 
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
@@ -322,10 +404,22 @@ export async function discoverOrCreateWaysideLedger() {
     const files = data.files || [];
     // Sort oldest-first matching public/js/drive.js findFilesGlobal so browser and orchestrator always pick the same ledger
     const exactMatch = files.find(f => (f.name || '').toLowerCase() === canonicalTitle.toLowerCase());
-    if (exactMatch?.id) return exactMatch.id;
+    if (exactMatch?.id) {
+      if (shareTargets.length > 0) {
+        await shareFileWithEmails(exactMatch.id, shareTargets, token);
+      }
+      return exactMatch.id;
+    }
 
-    const legacyMatch = files.find(f => (f.name || '').toLowerCase() === legacyTitle.toLowerCase());
-    if (legacyMatch?.id) return legacyMatch.id;
+    if (legacyTitle) {
+      const legacyMatch = files.find(f => (f.name || '').toLowerCase() === legacyTitle.toLowerCase());
+      if (legacyMatch?.id) {
+        if (shareTargets.length > 0) {
+          await shareFileWithEmails(legacyMatch.id, shareTargets, token);
+        }
+        return legacyMatch.id;
+      }
+    }
   }
 
   // Create a dedicated Wayside Share Ledger matching collab.js ledgerFileName
@@ -342,6 +436,9 @@ export async function discoverOrCreateWaysideLedger() {
     },
   });
   await ensureLedgerStructure(created.spreadsheetId);
+  if (shareTargets.length > 0) {
+    await shareFileWithEmails(created.spreadsheetId, shareTargets, token);
+  }
   return created.spreadsheetId;
 }
 
@@ -450,6 +547,102 @@ export function classifyMessage(text) {
 /* ---------- Orchestrator Daemon Core ---------- */
 
 export class WaysideOrchestrator {
+  /**
+   * Determine whether the orchestrator should reply to an incoming message.
+   * In 1-on-1 / shared AI ledgers (`isGroup: false`), all non-empty messages are answered.
+   * In group / crew ledgers (`isGroup: true`), the agent only responds when explicitly
+   * mentioned or addressed so human-to-human chats are not interrupted.
+   * @param {string} text
+   * @param {{ isGroup?: boolean, agentName?: string, agentEmail?: string }} [opts]
+   * @returns {boolean}
+   */
+  static shouldRespondToMessage(text, opts = {}) {
+    const clean = String(text || '').trim();
+    if (!clean) return false;
+    if (!opts.isGroup && !opts.isGroupLedger) return true;
+
+    const lower = clean.toLowerCase();
+    const agentNameLower = String(opts.agentName || AGENT_NAME).toLowerCase();
+    const agentEmailLower = String(opts.agentEmail || AGENT_EMAIL).toLowerCase();
+    if (
+      lower.includes('@waymark') ||
+      lower.includes('@agent') ||
+      lower.includes('@assistant') ||
+      lower.includes('@ai') ||
+      lower.includes(agentNameLower) ||
+      lower.includes(agentEmailLower) ||
+      /^(?:hey\s+|hi\s+)?waymark\b/i.test(clean)
+    ) {
+      return true;
+    }
+    for (const tmpl of CATALOG.templates || []) {
+      if (lower.includes(`@${tmpl.key}`)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Discover or provision all configured Wayside Share Ledgers:
+   * 1. The primary host user's bilateral ledger
+   * 2. Dedicated bilateral ledgers for each email in `WAYSIDE_ALLOWED_USERS` (shared with that user)
+   * 3. Shared group ledgers for each group in `WAYSIDE_GROUPS` (shared with allowed users)
+   * @param {{ allowedUsers?: string|string[], groups?: string|string[] }} [opts]
+   * @returns {Promise<Array<{ sheetId: string, userEmail: string, isGroup: boolean, group: string }>>}
+   */
+  static async discoverAllLedgers(opts = {}) {
+    const token = await getAuthToken();
+    const hostEmail = await resolveCurrentUserEmail(token);
+    const allowedUsers = parseEmailList(opts.allowedUsers ?? process.env.WAYSIDE_ALLOWED_USERS);
+    const groups = parseGroupList(opts.groups ?? process.env.WAYSIDE_GROUPS);
+
+    const results = [];
+    const seenIds = new Set();
+
+    // 1. Primary host ledger (also shared with allowedUsers if any are configured)
+    const primaryId = await discoverOrCreateWaysideLedger({
+      userEmail: hostEmail,
+      shareWithEmails: allowedUsers,
+    });
+    if (primaryId) {
+      seenIds.add(primaryId);
+      results.push({ sheetId: primaryId, userEmail: hostEmail, isGroup: false, isGroupLedger: false, group: '' });
+    }
+
+    // 2. Per-user bilateral ledgers for each allowed guest/family member
+    for (const guestEmail of allowedUsers) {
+      if (hostEmail && guestEmail === hostEmail) continue;
+      const guestLedgerId = await discoverOrCreateWaysideLedger({
+        userEmail: guestEmail,
+        shareWithEmails: [guestEmail],
+      });
+      if (guestLedgerId && !seenIds.has(guestLedgerId)) {
+        seenIds.add(guestLedgerId);
+        results.push({ sheetId: guestLedgerId, userEmail: guestEmail, isGroup: false, isGroupLedger: false, group: '' });
+      }
+    }
+
+    // 3. Shared group / crew ledgers
+    for (const group of groups) {
+      const groupLedgerId = await discoverOrCreateWaysideLedger({
+        group,
+        shareWithEmails: allowedUsers,
+      });
+      if (groupLedgerId && !seenIds.has(groupLedgerId)) {
+        seenIds.add(groupLedgerId);
+        results.push({ sheetId: groupLedgerId, userEmail: hostEmail, isGroup: true, isGroupLedger: true, group });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Expose Drive permission helper for tests and callers.
+   */
+  static async shareFileWithEmails(fileId, emails = [], existingToken = null) {
+    return shareFileWithEmails(fileId, emails, existingToken);
+  }
+
   constructor(opts = {}) {
     this.sheetId = opts.sheetId;
     const stableHash = crypto.createHash('sha1').update(String(opts.sheetId || 'wayside')).digest('hex').slice(0, 6);
@@ -457,6 +650,9 @@ export class WaysideOrchestrator {
     this.agentName = opts.agentName || AGENT_NAME;
     this.agentEmail = opts.agentEmail || AGENT_EMAIL;
     this.userEmail = (opts.userEmail || process.env.WAYSIDE_USER_EMAIL || '').trim().toLowerCase();
+    this.isGroup = Boolean(opts.isGroup);
+    this.group = String(opts.group || '').trim();
+    this.allowedUsers = parseEmailList(opts.allowedUsers ?? process.env.WAYSIDE_ALLOWED_USERS);
     this.pollIntervalMs = opts.pollIntervalMs || POLL_INTERVAL_MS;
     this.presenceIntervalMs = opts.presenceIntervalMs || PRESENCE_INTERVAL_MS;
 
@@ -616,6 +812,15 @@ export class WaysideOrchestrator {
       return;
     }
 
+    if (!WaysideOrchestrator.shouldRespondToMessage(data.text, {
+      isGroup: this.isGroup,
+      agentName: this.agentName,
+      agentEmail: this.agentEmail,
+    })) {
+      this.processedMessageIds.add(messageId);
+      return;
+    }
+
     const senderEmail = rawSender.includes('@') ? rawSender.toLowerCase() : (this.userEmail || rawSender || remotePeerId);
 
     this.queueMessageProcessing({
@@ -646,6 +851,15 @@ export class WaysideOrchestrator {
         }
 
         if (text && text.trim()) {
+          if (!WaysideOrchestrator.shouldRespondToMessage(text, {
+            isGroup: this.isGroup,
+            agentName: this.agentName,
+            agentEmail: this.agentEmail,
+          })) {
+            this.processedMessageIds.add(msgId);
+            continue;
+          }
+
           const normalizedSender = (senderEmail || this.userEmail || 'Waymarker').trim();
           if (!this.userEmail && normalizedSender.includes('@')) {
             this.userEmail = normalizedSender.toLowerCase();
@@ -690,6 +904,13 @@ export class WaysideOrchestrator {
       lastTemplateKey: null,
     };
 
+    // Compute household/collaborator share list so created sheets/docs are accessible to the requester
+    const shareTargets = parseEmailList([
+      sender,
+      this.userEmail,
+      ...this.allowedUsers,
+    ]);
+
     // 2. Classify intent
     const classification = classifyMessage(text);
     const explicitSheetId = extractSpreadsheetId(text);
@@ -731,6 +952,7 @@ export class WaysideOrchestrator {
         templateKey: effectiveTemplateKey,
         sheetId: targetSheetId,
         context: contextLines.join('\n'),
+        shareWith: shareTargets,
       });
 
       if (agyResult.ok) {
@@ -760,6 +982,7 @@ export class WaysideOrchestrator {
     await this.deliverReply({
       replyText,
       targetUser: recipientEmail,
+      shareTargets,
       createdSheetId,
       shouldLinkSheet,
       createdSheetTitle,
@@ -778,7 +1001,7 @@ export class WaysideOrchestrator {
     }
   }
 
-  async deliverReply({ replyText, targetUser, createdSheetId, shouldLinkSheet, createdSheetTitle, createdDocId, shouldLinkDoc, createdDocTitle, templateKey }) {
+  async deliverReply({ replyText, targetUser, shareTargets = [], createdSheetId, shouldLinkSheet, createdSheetTitle, createdDocId, shouldLinkDoc, createdDocTitle, templateKey }) {
     const replyId = `msg-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
     this.processedMessageIds.add(replyId);
 
@@ -787,6 +1010,15 @@ export class WaysideOrchestrator {
       attachedLink = `#/sheet/${createdSheetId}`;
     } else if (createdDocId) {
       attachedLink = `https://docs.google.com/document/d/${createdDocId}/edit`;
+    }
+
+    // Ensure the requester and any allowed household members have writer access on newly created/linked files
+    const effectiveShares = parseEmailList([...shareTargets, targetUser]);
+    if (createdSheetId && effectiveShares.length > 0) {
+      await shareFileWithEmails(createdSheetId, effectiveShares);
+    }
+    if (createdDocId && effectiveShares.length > 0) {
+      await shareFileWithEmails(createdDocId, effectiveShares);
     }
 
     // A. Link newly discovered/created sheet or doc into Shared_Docs FIRST (deduplicated)
@@ -799,7 +1031,7 @@ export class WaysideOrchestrator {
           createdSheetTitle || 'Shared Waymark',
           templateKey || 'Waymark',
           targetUser || '',
-          '',
+          this.group || '',
           'writer',
           new Date().toISOString(),
           'Shared',
@@ -818,7 +1050,7 @@ export class WaysideOrchestrator {
           createdDocTitle || 'Shared Document',
           'doc',
           targetUser || '',
-          '',
+          this.group || '',
           'writer',
           new Date().toISOString(),
           'Shared',
@@ -836,7 +1068,7 @@ export class WaysideOrchestrator {
         replyId,
         new Date().toISOString(),
         this.agentEmail,
-        targetUser || '',
+        this.group || targetUser || '',
         replyText,
         attachedLink,
       ]]);
@@ -886,39 +1118,56 @@ function isMainModule(metaUrl) {
 if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   let sheetId = process.env.WAYSIDE_LEDGER_ID || process.env.WAYMARK_SHEET_ID || null;
+  let allowedUsersArg = process.env.WAYSIDE_ALLOWED_USERS || '';
+  let groupsArg = process.env.WAYSIDE_GROUPS || '';
   let once = false;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--sheet' && args[i + 1]) { sheetId = args[++i]; }
+    else if (args[i] === '--allowed-users' && args[i + 1]) { allowedUsersArg = args[++i]; }
+    else if (args[i] === '--groups' && args[i + 1]) { groupsArg = args[++i]; }
     else if (args[i] === '--once') { once = true; }
     else if (!sheetId && !args[i].startsWith('--')) { sheetId = args[i]; }
   }
 
   (async () => {
-    if (!sheetId) {
-      console.log('[WaysideOrchestrator] No --sheet specified; discovering or provisioning Wayside Share Ledger in Drive...');
-      sheetId = await discoverOrCreateWaysideLedger();
-      console.log(`[WaysideOrchestrator] Using Wayside Share Ledger: ${sheetId}`);
+    let ledgers = [];
+    if (sheetId) {
+      ledgers = [{ sheetId, userEmail: '', isGroup: false, group: '' }];
+    } else {
+      console.log('[WaysideOrchestrator] No --sheet specified; discovering or provisioning Wayside Share Ledger(s) in Drive...');
+      ledgers = await WaysideOrchestrator.discoverAllLedgers({
+        allowedUsers: allowedUsersArg,
+        groups: groupsArg,
+      });
+      for (const l of ledgers) {
+        const label = l.isGroup ? `group:${l.group}` : (l.userEmail || 'primary');
+        console.log(`[WaysideOrchestrator] Using Wayside Share Ledger (${label}): ${l.sheetId}`);
+      }
     }
 
-    const orchestrator = new WaysideOrchestrator({ sheetId });
+    const orchestrators = ledgers.map(l => new WaysideOrchestrator({
+      sheetId: l.sheetId,
+      userEmail: l.userEmail,
+      isGroup: l.isGroup,
+      group: l.group,
+      allowedUsers: allowedUsersArg,
+    }));
 
     if (once) {
-      await orchestrator.runOnce();
+      await Promise.all(orchestrators.map(o => o.runOnce()));
       process.exit(0);
     }
 
-    await orchestrator.start();
+    await Promise.all(orchestrators.map(o => o.start()));
 
-    process.on('SIGINT', async () => {
-      console.log('\nShutting down Wayside Orchestrator...');
-      await orchestrator.stop();
+    const shutdown = async () => {
+      console.log('\nShutting down Wayside Orchestrator(s)...');
+      await Promise.all(orchestrators.map(o => o.stop()));
       process.exit(0);
-    });
-    process.on('SIGTERM', async () => {
-      await orchestrator.stop();
-      process.exit(0);
-    });
+    };
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
   })().catch(err => {
     console.error('[WaysideOrchestrator] Fatal error starting orchestrator:', err);
     process.exit(1);
