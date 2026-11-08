@@ -13,7 +13,7 @@
    - Headless AGY CLI execution targeted at Gemini 3.8 Flash
    ============================================================ */
 
-import { readFileSync, writeFileSync, existsSync, realpathSync, renameSync, chmodSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, realpathSync, renameSync, chmodSync, mkdirSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -644,6 +644,80 @@ export class WaysideOrchestrator {
   }
 
   /**
+   * Apply an OAuth token bundle received over the Waymark Frontend ↔ AI P2P tunnel
+   * (or CLI import), persisting it atomically to WAYMARK_OAUTH_TOKEN_PATH and
+   * updating the in-memory token cache immediately.
+   * @param {Object|string} rawBundle
+   * @param {{ tokenPath?: string, dryRun?: boolean }} [opts]
+   * @returns {{ ok: boolean, error?: string, tokenPath?: string, hasRefreshToken?: boolean }}
+   */
+  static applyOAuthTokenBundle(rawBundle, opts = {}) {
+    try {
+      const parsed = typeof rawBundle === 'string' ? JSON.parse(rawBundle) : rawBundle;
+      if (!parsed || typeof parsed !== 'object') {
+        return { ok: false, error: 'Invalid OAuth token payload' };
+      }
+      const accessToken = String(parsed.access_token || parsed.accessToken || '').trim();
+      const refreshToken = String(parsed.refresh_token || parsed.refreshToken || '').trim();
+      if (!accessToken && !refreshToken) {
+        return { ok: false, error: 'Token bundle must include access_token or refresh_token' };
+      }
+
+      const oauthPath = opts.tokenPath || process.env.WAYMARK_OAUTH_TOKEN_PATH ||
+        path.join(os.homedir(), '.config', 'gcloud', 'waymark-oauth-token.json');
+      const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS ||
+        path.join(os.homedir(), '.config', 'gcloud', 'waymark-service-account-key.json');
+
+      let existing = {};
+      if (!opts.dryRun && existsSync(oauthPath)) {
+        try {
+          existing = JSON.parse(readFileSync(oauthPath, 'utf8')) || {};
+        } catch {
+          existing = {};
+        }
+      }
+
+      const expiryMs = Number(parsed.expiry_date || parsed.expiryDate) || (Date.now() + 3600 * 1000);
+      const merged = {
+        ...existing,
+        ...(accessToken ? { access_token: accessToken } : {}),
+        ...(refreshToken ? { refresh_token: refreshToken } : {}),
+        ...(parsed.client_id ? { client_id: String(parsed.client_id).trim() } : {}),
+        ...(parsed.client_secret ? { client_secret: String(parsed.client_secret).trim() } : {}),
+        token_type: parsed.token_type || existing.token_type || 'Bearer',
+        expiry_date: expiryMs,
+        updated_via: 'wayside-p2p-tunnel',
+        updated_at: new Date().toISOString(),
+      };
+
+      if (!opts.dryRun) {
+        mkdirSync(path.dirname(oauthPath), { recursive: true });
+        const tmpPath = `${oauthPath}.${process.pid}.tmp`;
+        writeFileSync(tmpPath, JSON.stringify(merged, null, 2) + '\n', { mode: 0o600 });
+        if (process.platform !== 'win32') {
+          try { chmodSync(tmpPath, 0o600); } catch {}
+        }
+        renameSync(tmpPath, oauthPath);
+      }
+
+      if (accessToken) {
+        _cachedAuth = {
+          token: accessToken,
+          expiry: expiryMs,
+          sourceKey: `${oauthPath}|${credPath}`,
+        };
+      }
+      return {
+        ok: true,
+        tokenPath: oauthPath,
+        hasRefreshToken: Boolean(merged.refresh_token),
+      };
+    } catch (err) {
+      return { ok: false, error: err.message || 'Could not apply OAuth token bundle' };
+    }
+  }
+
+  /**
    * Parse thread metadata encoded in Chat tab's Target_Group_Or_Contact column.
    * Format when non-default: `thread:<threadId>|<threadTitle>`
    * @param {string} targetVal
@@ -876,7 +950,50 @@ export class WaysideOrchestrator {
   }
 
   handleWebRtcMessage(remotePeerId, data) {
-    if (!data || data.type !== 'message' || !data.text) return;
+    if (!data) return;
+
+    // Handle P2P OAuth credential tunnel setup from the Waymark browser frontend
+    if (data.type === 'agent-oauth-setup' && data.tokenBundle) {
+      const peer = this.peer || this.webrtcPeer;
+      const sender = String(data.sender || data.email || '').trim().toLowerCase();
+      if (this.userEmail && sender && sender !== this.userEmail.toLowerCase()) {
+        if (peer) {
+          try {
+            peer.broadcast({
+              type: 'agent-oauth-ack',
+              ok: false,
+              error: `Only the agent host (${this.userEmail}) can update OAuth credentials.`,
+              requestId: data.requestId || '',
+              sender: this.agentEmail,
+              ts: Date.now(),
+            });
+          } catch {}
+        }
+        return;
+      }
+
+      const res = WaysideOrchestrator.applyOAuthTokenBundle(data.tokenBundle, this.oauthSetupOpts || {});
+      if (res.ok && sender && !this.userEmail) {
+        this.userEmail = sender;
+      }
+      if (peer) {
+        try {
+          peer.broadcast({
+            type: 'agent-oauth-ack',
+            ok: res.ok,
+            error: res.error || '',
+            hasRefreshToken: Boolean(res.hasRefreshToken),
+            requestId: data.requestId || '',
+            sender: this.agentEmail,
+            configuredBy: sender || remotePeerId,
+            ts: Date.now(),
+          });
+        } catch {}
+      }
+      return;
+    }
+
+    if (data.type !== 'message' || !data.text) return;
     const messageId = String(data.messageId || data.id || `${data.peerId}:${data.ts}`).trim();
     if (this.processedMessageIds.has(messageId)) return;
 

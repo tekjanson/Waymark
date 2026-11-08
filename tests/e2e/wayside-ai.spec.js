@@ -147,5 +147,70 @@ const { setupApp } = require('../helpers/test-utils');
     expect(mobileMetrics.bodyScrollWidth).toBeLessThanOrEqual(mobileMetrics.bodyClientWidth + 2);
   });
 
+  test('Collaborator can connect a shared agent ledger, switch between Personal and Shared Agent, and push OAuth tokens over P2P tunnel', async ({ page }) => {
+    await setupApp(page);
+    await page.waitForSelector('#home-wayside', { timeout: 5_000 });
+
+    // Seed a shared agent ledger owned by spouse@gmail.com in mock sheets
+    await page.evaluate(async () => {
+      const { api } = await import('/js/api-client.js');
+      const created = await api.sheets.createSpreadsheet(
+        '.waymark-ledger-contact-pair-assistant@waymark.internal--spouse@gmail.com',
+        [['Document_ID', 'Document_Title', 'Waymark_Type', 'Shared_With_Email', 'Group', 'Permission_Level', 'Shared_Timestamp', 'Status']],
+        null
+      );
+      window.__TEST_SHARED_AGENT_ID = created.spreadsheetId || created.id;
+      await api.sheets.writeTab(window.__TEST_SHARED_AGENT_ID, 'Chat', [
+        ['Message_ID', 'Timestamp_UTC', 'Sender_Email', 'Target_Group_Or_Contact', 'Message_Text', 'Attached_Waymark_Link'],
+        ['m-shared-1', '2026-11-08T10:00:00Z', 'spouse@gmail.com', 'assistant@waymark.internal', 'Hello from spouse shared agent!', ''],
+      ]);
+    });
+
+    const sharedSheetId = await page.evaluate(() => window.__TEST_SHARED_AGENT_ID);
+    expect(sharedSheetId).toBeTruthy();
+
+    // Open Profile / Settings modal and click Configure / Switch button for Waymark AI Agent
+    await page.locator('#user-name').click();
+    await page.waitForSelector('#settings-modal:not(.hidden)', { timeout: 5_000 });
+    await expect(page.locator('#settings-agent-host-label')).toContainText('Personal Agent');
+    await page.locator('#settings-configure-agent-btn').click();
+
+    const modal = page.locator('#wayside-share-agent-modal');
+    await expect(modal).toBeVisible();
+
+    // Paste shared invite link and connect to the shared agent
+    await page.fill(
+      '#wayside-connect-agent-input',
+      `https://waymark.example.com/?ledger=${sharedSheetId}&from=assistant%40waymark.internal`
+    );
+    await page.click('#wayside-connect-agent-btn');
+
+    // Host selector now has the shared agent selected and shows spouse@gmail.com
+    await expect(page.locator('#wayside-agent-host-select')).toHaveValue(sharedSheetId);
+    await expect(page.locator('#wayside-agent-host-select option:checked')).toContainText('spouse@gmail.com');
+
+    // Test pushing OAuth token via P2P tunnel
+    await page.click('#wayside-push-oauth-btn');
+    await expect(page.locator('#wayside-oauth-tunnel-status')).toContainText('Pushed OAuth token bundle');
+
+    // Simulate agent acknowledging the OAuth token over P2P
+    await page.evaluate(() => {
+      document.dispatchEvent(new CustomEvent('waymark:agent-oauth-ack', {
+        detail: { ok: true, hasRefreshToken: true },
+      }));
+    });
+    await expect(page.locator('#wayside-oauth-tunnel-status')).toContainText('Agent acknowledged OAuth credentials');
+
+    // Close modal and verify shared agent chat message is loaded in Wayside AI
+    await page.locator('.wayside-share-agent-close').click();
+    await expect(page.locator('#wayside-chat-log')).toContainText('Hello from spouse shared agent!');
+
+    // Verify Settings modal also reflects the active Shared Agent
+    await page.locator('#user-name').click();
+    await page.waitForSelector('#settings-modal:not(.hidden)', { timeout: 5_000 });
+    await expect(page.locator('#settings-agent-host-label')).toContainText('Shared Agent (spouse@gmail.com)');
+  });
+
+
 
 

@@ -223,22 +223,44 @@ async function ensureShareLedger(target) {
  * @param {{ contactEmail?: string, group?: string }} target
  * @returns {Promise<{key: string, sheetId: string}|null>}
  */
+const _resolvedLedgerCache = new Map();
+const LEDGER_CACHE_TTL_MS = 60_000;
+
 async function findExistingShareLedger(target) {
   const identity = ledgerIdentity(target);
   const { key, legacyKeys } = identity;
   if (!key || key === 'contact:') return null;
 
   const mapped = userData.getShareLedgerFor(key);
+  if (mapped?.preferred && mapped?.sheetId) {
+    return {
+      key,
+      sheetId: mapped.sheetId,
+      ownerEmail: mapped.ownerEmail || '',
+      permissionAttempted: mapped.permissionAttempted === true,
+      preferred: true,
+      label: mapped.label || '',
+      knownAgentLedgers: mapped.knownAgentLedgers || [],
+    };
+  }
 
-  // Search the canonical pair name first, then both old per-contact names in the
-  // SAME stable email-sorted order both accounts compute, so simultaneous first
-  // use settles on one canonical primary file and merges older chat/share history.
+  const cacheKey = `${currentEmail()}:${key}:${mapped?.sheetId || ''}`;
+  const cached = _resolvedLedgerCache.get(cacheKey);
+  if (cached && cached.result?.sheetId && Date.now() - cached.ts < LEDGER_CACHE_TTL_MS) {
+    return cached.result;
+  }
+
+  // Search the canonical pair name and legacy per-contact names in parallel, then
+  // assemble candidates in the SAME stable email-sorted order both accounts compute,
+  // so simultaneous first use settles on one canonical primary file and merges older history.
+  const searchResults = await Promise.all([
+    api.drive.findFilesGlobal(ledgerFileName(key)).catch(() => []),
+    ...legacyKeys.map(lk => api.drive.findFilesGlobal(ledgerFileName(lk)).catch(() => [])),
+  ]);
+
   const candidates = [];
-  try {
-    const files = await api.drive.findFilesGlobal(ledgerFileName(key));
-    for (const file of files || []) if (file?.id) candidates.push(file);
-  } catch {
-    /* continue to other known names and local mappings */
+  for (const file of searchResults[0] || []) {
+    if (file?.id) candidates.push(file);
   }
 
   // `contact:<other party>` uniquely identifies this pair, but `contact:<me>` is
@@ -246,16 +268,13 @@ async function findExistingShareLedger(target) {
   // name, so a bare name match can surface a stranger's — or the AI companion's —
   // chat. Keep a self-named match only when its participants include the target.
   const selfLegacy = new Set(identity.selfLegacyKeys || []);
-  for (const legacyKey of legacyKeys) {
-    try {
-      const files = await api.drive.findFilesGlobal(ledgerFileName(legacyKey));
-      for (const file of files || []) {
-        if (!file?.id || candidates.some(c => c.id === file.id)) continue;
-        if (selfLegacy.has(legacyKey) && !(await ledgerInvolvesContact(file, identity.contactEmail))) continue;
-        candidates.push(file);
-      }
-    } catch {
-      /* continue to other known names and local mappings */
+  for (let i = 0; i < legacyKeys.length; i++) {
+    const legacyKey = legacyKeys[i];
+    const files = searchResults[i + 1] || [];
+    for (const file of files) {
+      if (!file?.id || candidates.some(c => c.id === file.id)) continue;
+      if (selfLegacy.has(legacyKey) && !(await ledgerInvolvesContact(file, identity.contactEmail))) continue;
+      candidates.push(file);
     }
   }
 
@@ -292,23 +311,29 @@ async function findExistingShareLedger(target) {
         permissionAttempted
       );
     }
-    return {
+    const resolved = {
       key,
       sheetId: primary.id,
       ownerEmail: ownerEmail || mapped?.ownerEmail || '',
       permissionAttempted,
       mergedSheetIds: uniqueCandidates.slice(1).map(file => file.id),
     };
+    _resolvedLedgerCache.set(`${currentEmail()}:${key}:${primary.id}`, { ts: Date.now(), result: resolved });
+    return resolved;
   }
 
   // If Drive search is temporarily unavailable, keep using the already-known
   // pair mapping rather than creating another spreadsheet.
-  if (mapped?.sheetId) return {
-    key,
-    sheetId: mapped.sheetId,
-    ownerEmail: mapped.ownerEmail || '',
-    permissionAttempted: mapped.permissionAttempted === true,
-  };
+  if (mapped?.sheetId) {
+    const fallback = {
+      key,
+      sheetId: mapped.sheetId,
+      ownerEmail: mapped.ownerEmail || '',
+      permissionAttempted: mapped.permissionAttempted === true,
+    };
+    _resolvedLedgerCache.set(cacheKey, { ts: Date.now(), result: fallback });
+    return fallback;
+  }
 
   // Fallback: check if the user's Contacts Waymark already has a Share_Data_Sheet
   // or Social_Data_Location ID recorded for this contact or group.
@@ -331,12 +356,14 @@ async function findExistingShareLedger(target) {
       );
       if (hasSharedDocsTab) {
         await rememberShareLedger(target, identity, fromContactsId, '', false);
-        return {
+        const fromDir = {
           key,
           sheetId: fromContactsId,
           ownerEmail: '',
           permissionAttempted: false,
         };
+        _resolvedLedgerCache.set(`${currentEmail()}:${key}:${fromContactsId}`, { ts: Date.now(), result: fromDir });
+        return fromDir;
       }
     }
   } catch {
@@ -346,7 +373,31 @@ async function findExistingShareLedger(target) {
   return null;
 }
 
-async function rememberShareLedger(target, identity, sheetId, ownerEmail = '', permissionAttempted = false) {
+async function rememberShareLedger(target, identity, sheetId, ownerEmail = '', permissionAttempted = false, extra = {}) {
+  const me = currentEmail();
+  const isAgent = String(target.contactEmail || '').trim().toLowerCase() === 'assistant@waymark.internal';
+  const prev = userData.getShareLedgerFor(identity.key);
+  let knownAgentLedgers = Array.isArray(extra.knownAgentLedgers)
+    ? [...extra.knownAgentLedgers]
+    : (Array.isArray(prev?.knownAgentLedgers) ? [...prev.knownAgentLedgers] : []);
+
+  if (isAgent && sheetId) {
+    const cleanOwner = (ownerEmail || '').trim().toLowerCase();
+    const isShared = Boolean(extra.isShared || (cleanOwner && me && cleanOwner !== me));
+    const entryLabel = extra.label || (isShared
+      ? `🤝 Shared Agent (${cleanOwner || sheetId.slice(0, 8)})`
+      : `🏠 My Personal Agent (${me || 'My Account'})`);
+    const existingIdx = knownAgentLedgers.findIndex(item => item.sheetId === sheetId);
+    const nextItem = {
+      sheetId,
+      ownerEmail: cleanOwner || me || '',
+      label: entryLabel,
+      mode: isShared ? 'shared' : 'personal',
+    };
+    if (existingIdx >= 0) knownAgentLedgers[existingIdx] = nextItem;
+    else knownAgentLedgers.push(nextItem);
+  }
+
   await userData.addShareLedger({
     key: identity.key,
     contactEmail: target.contactEmail,
@@ -355,6 +406,9 @@ async function rememberShareLedger(target, identity, sheetId, ownerEmail = '', p
     ownerEmail,
     permissionAttempted,
     aliases: identity.legacyKeys,
+    preferred: Boolean(extra.preferred),
+    label: extra.label || '',
+    knownAgentLedgers: isAgent ? knownAgentLedgers : undefined,
   });
 }
 
@@ -362,8 +416,8 @@ async function rememberShareLedger(target, identity, sheetId, ownerEmail = '', p
  * Register a shared ledger discovered via an invite deep-link (`?ledger=...`) or
  * selected by the recipient in Google Picker (required under `drive.file` scope).
  * Infers contactEmail or group from the sheet metadata/contents when not supplied.
- * @param {{ sheetId: string, contactEmail?: string, group?: string, ownerEmail?: string, fileName?: string }} args
- * @returns {Promise<{ key: string, sheetId: string, target: { contactEmail?: string, group?: string } }>}
+ * @param {{ sheetId: string, contactEmail?: string, group?: string, ownerEmail?: string, fileName?: string, preferred?: boolean, label?: string, isShared?: boolean }} args
+ * @returns {Promise<{ key: string, sheetId: string, target: { contactEmail?: string, group?: string }, ownerEmail?: string, label?: string }>}
  */
 async function registerSharedLedger(args = {}) {
   const sheetId = String(args.sheetId || '').trim();
@@ -373,40 +427,71 @@ async function registerSharedLedger(args = {}) {
   let contactEmail = String(args.contactEmail || '').trim().toLowerCase();
   let group = String(args.group || '').trim();
   let title = String(args.fileName || '').trim();
+  let inferredOwner = String(args.ownerEmail || '').trim().toLowerCase();
 
-  if (!contactEmail && !group) {
-    try {
-      const data = await api.sheets.getSpreadsheet(sheetId);
+  try {
+    const data = (!contactEmail && !group) || !title || !inferredOwner
+      ? await api.sheets.getSpreadsheet(sheetId)
+      : null;
+    if (data) {
       title = title || String(data.title || '').trim();
-      const lowerTitle = title.toLowerCase();
-      if (lowerTitle.startsWith('.waymark-ledger-group:')) {
-        group = title.slice('.waymark-ledger-group:'.length).replace(/-/g, ' ').trim();
-      } else if (lowerTitle.startsWith('.waymark-ledger-contact-pair:')) {
-        const pairPart = lowerTitle.slice('.waymark-ledger-contact-pair:'.length);
-        const parts = pairPart.split('::').map(s => s.trim()).filter(Boolean);
-        contactEmail = parts.find(e => e !== me) || parts[0] || '';
-      } else if (lowerTitle.startsWith('.waymark-ledger-contact:')) {
-        const single = lowerTitle.slice('.waymark-ledger-contact:'.length).trim();
-        if (single && single !== me) contactEmail = single;
-      }
-      if (!contactEmail && !group) {
-        const chatRows = await readTab(sheetId, CHAT_TAB);
-        const otherChat = chatRows.find(r => r.Sender_Email && r.Sender_Email.trim().toLowerCase() !== me);
-        if (otherChat) contactEmail = otherChat.Sender_Email.trim().toLowerCase();
-      }
-    } catch {
-      /* best-effort metadata inspection */
     }
+    const lowerTitle = title.toLowerCase();
+    if (!group && (lowerTitle.startsWith('.waymark-ledger-group:') || lowerTitle.startsWith('.waymark-ledger-group-'))) {
+      group = title.slice('.waymark-ledger-group:'.length).replace(/-/g, ' ').trim();
+    } else if (lowerTitle.startsWith('.waymark-ledger-contact-pair:') || lowerTitle.startsWith('.waymark-ledger-contact-pair-')) {
+      const pairPart = lowerTitle.slice('.waymark-ledger-contact-pair:'.length);
+      const parts = pairPart.split(/::|--/).map(s => s.trim()).filter(Boolean);
+      if (parts.includes('assistant@waymark.internal')) {
+        if (!contactEmail) contactEmail = 'assistant@waymark.internal';
+        const otherHuman = parts.find(e => e !== 'assistant@waymark.internal' && e !== me);
+        if (otherHuman && !inferredOwner) inferredOwner = otherHuman;
+      } else if (!contactEmail) {
+        contactEmail = parts.find(e => e !== me) || parts[0] || '';
+      }
+    } else if (!contactEmail && (lowerTitle.startsWith('.waymark-ledger-contact:') || lowerTitle.startsWith('.waymark-ledger-contact-'))) {
+      const single = lowerTitle.slice('.waymark-ledger-contact:'.length).trim();
+      if (single && single !== me) contactEmail = single;
+    }
+    if ((!contactEmail && !group) || (contactEmail === 'assistant@waymark.internal' && !inferredOwner)) {
+      const chatRows = await readTab(sheetId, CHAT_TAB);
+      const hasAi = chatRows.some(r => (r.Sender_Email || '').trim().toLowerCase() === 'assistant@waymark.internal');
+      const otherHumanChat = chatRows.find(r => {
+        const s = (r.Sender_Email || '').trim().toLowerCase();
+        return s && s !== me && s !== 'assistant@waymark.internal';
+      });
+      if (!contactEmail && hasAi) contactEmail = 'assistant@waymark.internal';
+      if (otherHumanChat) {
+        const humanEmail = otherHumanChat.Sender_Email.trim().toLowerCase();
+        if (!contactEmail) contactEmail = humanEmail;
+        if (!inferredOwner) inferredOwner = humanEmail;
+      }
+    }
+  } catch {
+    /* best-effort metadata inspection */
   }
 
   const target = group
     ? { group }
     : { contactEmail: contactEmail || 'collaborator@waymark.local' };
   const identity = ledgerIdentity(target);
-  await rememberShareLedger(target, identity, sheetId, args.ownerEmail || contactEmail || '', false);
+  const isAgent = target.contactEmail === 'assistant@waymark.internal';
+  const effectiveOwner = inferredOwner || (isAgent ? '' : contactEmail);
+  const isSharedAgent = Boolean(isAgent && (args.isShared !== false) && (effectiveOwner !== me));
+  const agentLabel = args.label || (isAgent
+    ? (isSharedAgent
+      ? `🤝 Shared Agent (${effectiveOwner || sheetId.slice(0, 8)})`
+      : `🏠 My Personal Agent (${me || 'My Account'})`)
+    : '');
+
+  await rememberShareLedger(target, identity, sheetId, effectiveOwner, false, {
+    preferred: args.preferred !== undefined ? Boolean(args.preferred) : isAgent,
+    label: agentLabel,
+    isShared: isSharedAgent,
+  });
   await linkLedgerToContacts(target, sheetId);
   await pollShareLedgers();
-  return { key: identity.key, sheetId, target };
+  return { key: identity.key, sheetId, target, ownerEmail: effectiveOwner, label: agentLabel };
 }
 
 /**
@@ -1386,7 +1471,7 @@ async function getSignalingTarget(target) {
  * @param {{ status?: string, activeWaymarkId?: string, displayName?: string }} [opts]
  */
 async function publishPresence(target, opts = {}) {
-  const { sheetId } = await ensureShareLedger(target);
+  const sheetId = opts.sheetId || (await ensureShareLedger(target)).sheetId;
   await upsertPresenceRow(sheetId, target, opts);
 }
 

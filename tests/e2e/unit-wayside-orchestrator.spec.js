@@ -506,5 +506,78 @@ const ROOT = path.resolve(__dirname, '../..');
     expect(orch.conversations.get('host@gmail.com::thread-b').history.length).toBe(2);
   });
 
+  test('WaysideOrchestrator handles P2P agent-oauth-setup messages, persists token bundle, and broadcasts agent-oauth-ack', async () => {
+    const { WaysideOrchestrator } = await import('../../scripts/wayside-orchestrator.mjs');
+    const tmpToken = path.join(ROOT, 'tests', 'fixtures', 'tmp-p2p-oauth.json');
+    if (fs.existsSync(tmpToken)) fs.unlinkSync(tmpToken);
+
+    try {
+      const orch = new WaysideOrchestrator({
+        sheetId: 'p2p-oauth-ledger',
+        userEmail: 'host@gmail.com',
+      });
+      const broadcasts = [];
+      orch.webrtcPeer = {
+        broadcast: (msg) => broadcasts.push(msg),
+      };
+
+      // 1. Direct applyOAuthTokenBundle persists token file and returns metadata
+      const applied = WaysideOrchestrator.applyOAuthTokenBundle({
+        access_token: 'ya29.p2p-test-token',
+        refresh_token: '1//0g-p2p-refresh-token',
+        client_id: 'test-client-id',
+        client_secret: 'test-client-secret',
+        expiry_date: Date.now() + 3600_000,
+      }, { tokenPath: tmpToken });
+
+      expect(applied.ok).toBe(true);
+      expect(applied.hasRefreshToken).toBe(true);
+      const written = JSON.parse(fs.readFileSync(tmpToken, 'utf8'));
+      expect(written.access_token).toBe('ya29.p2p-test-token');
+      expect(written.refresh_token).toBe('1//0g-p2p-refresh-token');
+
+      // 2. Unauthorized sender via P2P is rejected with ok: false
+      await orch.handleWebRtcMessage('peer-stranger', {
+        type: 'agent-oauth-setup',
+        requestId: 'req-unauth',
+        sender: 'stranger@gmail.com',
+        tokenBundle: { access_token: 'ya29.hijack' },
+      });
+      expect(broadcasts.length).toBe(1);
+      expect(broadcasts[0].type).toBe('agent-oauth-ack');
+      expect(broadcasts[0].ok).toBe(false);
+      expect(broadcasts[0].requestId).toBe('req-unauth');
+
+      // 3. Authorized host sender via P2P succeeds and broadcasts ok: true
+      const origPath = process.env.WAYMARK_OAUTH_TOKEN_PATH;
+      process.env.WAYMARK_OAUTH_TOKEN_PATH = tmpToken;
+      try {
+        await orch.handleWebRtcMessage('peer-host', {
+          type: 'agent-oauth-setup',
+          requestId: 'req-auth',
+          sender: 'host@gmail.com',
+          tokenBundle: {
+            access_token: 'ya29.host-updated-token',
+            refresh_token: '1//0g-host-refresh',
+          },
+        });
+      } finally {
+        if (origPath === undefined) delete process.env.WAYMARK_OAUTH_TOKEN_PATH;
+        else process.env.WAYMARK_OAUTH_TOKEN_PATH = origPath;
+      }
+
+      expect(broadcasts.length).toBe(2);
+      expect(broadcasts[1].type).toBe('agent-oauth-ack');
+      expect(broadcasts[1].ok).toBe(true);
+      expect(broadcasts[1].hasRefreshToken).toBe(true);
+      expect(broadcasts[1].requestId).toBe('req-auth');
+      const updated = JSON.parse(fs.readFileSync(tmpToken, 'utf8'));
+      expect(updated.access_token).toBe('ya29.host-updated-token');
+    } finally {
+      if (fs.existsSync(tmpToken)) fs.unlinkSync(tmpToken);
+    }
+  });
+
+
 
 

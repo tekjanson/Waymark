@@ -1019,9 +1019,10 @@ function getShareLedgerFor(key) {
  * Record a Share Ledger mapping (idempotent by ledger key).
  * @param {{key: string, contactEmail?: string, group?: string, sheetId: string, ownerEmail?: string, permissionAttempted?: boolean, aliases?: string[]}} entry
  */
-async function addShareLedger({ key, contactEmail, group, sheetId, ownerEmail, permissionAttempted = false, aliases = [] }) {
+async function addShareLedger({ key, contactEmail, group, sheetId, ownerEmail, permissionAttempted = false, aliases = [], preferred = false, label = '', knownAgentLedgers = undefined }) {
   if (!key || !sheetId) return;
   const replacedKeys = new Set([key, ...aliases]);
+  const prev = getShareLedgers().find(l => replacedKeys.has(l.key));
   const existing = getShareLedgers().filter(l => !replacedKeys.has(l.key));
   existing.push({
     key,
@@ -1030,6 +1031,9 @@ async function addShareLedger({ key, contactEmail, group, sheetId, ownerEmail, p
     sheetId,
     ownerEmail: (ownerEmail || '').trim().toLowerCase() || undefined,
     permissionAttempted: Boolean(permissionAttempted),
+    preferred: Boolean(preferred),
+    label: label || prev?.label || undefined,
+    knownAgentLedgers: Array.isArray(knownAgentLedgers) ? knownAgentLedgers : prev?.knownAgentLedgers,
     createdAt: new Date().toISOString(),
   });
   await save({ shareLedgers: existing });

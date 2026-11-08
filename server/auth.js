@@ -341,6 +341,46 @@ module.exports = function setupAuth(app) {
     }
   });
 
+  /* --- POST /auth/agent-token ---
+   * Exports an OAuth token bundle for the authenticated user so they can push
+   * credentials over the encrypted WebRTC P2P tunnel to their Waymark AI agent. */
+  app.post('/auth/agent-token', async (req, res) => {
+    const refreshToken = req.cookies.waymark_refresh;
+    if (!refreshToken) {
+      return res.status(401).json({ error: 'No refresh token' });
+    }
+    if (config.WAYMARK_LOCAL) {
+      return res.json({
+        access_token: 'mock-access-token-' + Date.now(),
+        refresh_token: refreshToken,
+        client_id: config.GOOGLE_CLIENT_ID || 'mock-client-id.apps.googleusercontent.com',
+        client_secret: config.GOOGLE_CLIENT_SECRET || 'mock-client-secret',
+        token_type: 'Bearer',
+        expiry_date: Date.now() + 3600 * 1000,
+      });
+    }
+    try {
+      const tokens = await refreshAccessToken(refreshToken);
+      if (tokens.error) {
+        return res.status(401).json({ error: tokens.error_description || tokens.error });
+      }
+      if (tokens.refresh_token) {
+        res.cookie('waymark_refresh', tokens.refresh_token, REFRESH_COOKIE_OPTS);
+      }
+      res.json({
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token || refreshToken,
+        client_id: config.GOOGLE_CLIENT_ID || '',
+        client_secret: config.GOOGLE_CLIENT_SECRET || '',
+        token_type: tokens.token_type || 'Bearer',
+        expiry_date: Date.now() + ((tokens.expires_in || 3600) * 1000),
+      });
+    } catch (err) {
+      console.error('Agent token export exception:', err);
+      res.status(500).json({ error: 'Agent token export failed' });
+    }
+  });
+
   /* --- POST /auth/logout --- */
   app.post('/auth/logout', async (req, res) => {
     res.clearCookie('waymark_refresh', { path: bp + '/auth' });

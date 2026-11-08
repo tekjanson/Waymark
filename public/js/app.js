@@ -2699,6 +2699,29 @@ function openSettingsModal() {
   settingsResetFolder.classList.toggle('hidden', !customName);
   settingsFolderBrowser.classList.add('hidden');
 
+  // Waymark AI Agent host status display
+  const agentHostLabel = document.getElementById('settings-agent-host-label');
+  const configureAgentBtn = document.getElementById('settings-configure-agent-btn');
+  if (agentHostLabel) {
+    const ledgers = userData.getShareLedgers?.() || [];
+    const agentEntry = ledgers.find(l => l.contactEmail === 'assistant@waymark.internal');
+    const me = (currentUser.email || '').trim().toLowerCase();
+    if (agentEntry?.preferred && agentEntry?.ownerEmail && agentEntry.ownerEmail !== me) {
+      agentHostLabel.textContent = agentEntry.label || `Shared Agent (${agentEntry.ownerEmail})`;
+    } else if (agentEntry?.label) {
+      agentHostLabel.textContent = agentEntry.label;
+    } else {
+      agentHostLabel.textContent = `Personal Agent (${currentUser.email || 'My Account'})`;
+    }
+  }
+  if (configureAgentBtn && !configureAgentBtn.dataset.wired) {
+    configureAgentBtn.dataset.wired = 'true';
+    configureAgentBtn.addEventListener('click', () => {
+      closeSettingsModal();
+      document.dispatchEvent(new CustomEvent('waymark:open-agent-config'));
+    });
+  }
+
   // Version picker (only visible when GitHub source is active)
   if (window.__WAYMARK_GITHUB_SOURCE && settingsVersionSection) {
     settingsVersionSection.classList.remove('hidden');

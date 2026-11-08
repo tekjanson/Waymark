@@ -130,6 +130,24 @@ function initWayboard(deps = {}) {
         await selectTarget(group ? { group, label } : { contactEmail, label, isAgent: contactEmail === 'assistant@waymark.internal' }, host);
       }
     });
+    document.addEventListener('waymark:open-agent-config', async () => {
+      const homeView = document.getElementById('home-view');
+      if (!homeView || homeView.classList.contains('hidden')) {
+        window.location.hash = '#/';
+        if (_navigate) _navigate('home');
+        await new Promise((r) => setTimeout(r, 0));
+      }
+      await renderWayside({ autoSelect: false }).catch(() => {});
+      const host = document.getElementById('home-wayside');
+      if (host) {
+        await selectTarget({
+          contactEmail: 'assistant@waymark.internal',
+          label: 'Waymark AI',
+          isAgent: true,
+        }, host);
+        await openShareAgentModal(host);
+      }
+    });
   }
 }
 
@@ -988,9 +1006,16 @@ async function renderWayside({ autoSelect = true } = {}) {
   if (!crews.length) {
     crewsBlock.append(el('div', { className: 'wayside-empty' }, ['Add a Contacts Waymark with a Group column to form crews.']));
   }
-  for (const crew of crews) {
-    const ledger = await collab.findExistingShareLedger({ group: crew.name });
-    if (renderToken !== _waysideRenderToken) return;
+  const crewLedgers = await Promise.all(
+    crews.map(crew => collab.findExistingShareLedger({ group: crew.name }).catch(() => null))
+  );
+  if (renderToken !== _waysideRenderToken) return;
+  for (let i = 0; i < crews.length; i++) {
+    const crew = crews[i];
+    const ledger = crewLedgers[i];
+    if (ledger?.sheetId) {
+      _waysideTargetLedgerCache.set(getWaysideTargetKey({ group: crew.name }), ledger);
+    }
     const row = el('div', { className: 'crew-row', dataset: { group: crew.name } }, [
       el('span', {}, [`🏠 ${crew.name}`]),
       ledger
@@ -1049,6 +1074,28 @@ async function renderWayside({ autoSelect = true } = {}) {
   }
 }
 
+const _waysideSnapshotCache = new Map();
+const _waysideTargetLedgerCache = new Map();
+
+function getWaysideTargetKey(target = {}) {
+  if (target.group) return `group:${String(target.group).trim().toLowerCase()}`;
+  return `contact:${String(target.contactEmail || '').trim().toLowerCase()}`;
+}
+
+function peekKnownLedgerForTarget(target = {}) {
+  const tKey = getWaysideTargetKey(target);
+  const mem = _waysideTargetLedgerCache.get(tKey);
+  if (mem?.sheetId) return mem;
+  const all = userData.getShareLedgers?.() || [];
+  if (target.group) {
+    const g = String(target.group).trim().toLowerCase();
+    return all.find(l => String(l.group || '').trim().toLowerCase() === g && l.sheetId) || null;
+  }
+  const email = String(target.contactEmail || '').trim().toLowerCase();
+  if (!email) return null;
+  return all.find(l => String(l.contactEmail || '').trim().toLowerCase() === email && l.sheetId) || null;
+}
+
 async function selectTarget(target, host) {
   const generation = ++_waysideTargetGeneration;
   const targetChanged = !_activeTarget
@@ -1064,6 +1111,7 @@ async function selectTarget(target, host) {
         const ledger = await collab.findExistingShareLedger(target);
         if (generation === _waysideTargetGeneration && ledger?.sheetId && _waysideWidget) {
           _activeLedgerId = ledger.sheetId;
+          _waysideTargetLedgerCache.set(getWaysideTargetKey(target), ledger);
           _waysideWidget.setSignaling(ledger.sheetId, collab.createLedgerSignal(ledger.sheetId));
         }
       } catch {}
@@ -1072,27 +1120,19 @@ async function selectTarget(target, host) {
     return;
   }
 
-  if (targetChanged) {
-    _activeLedgerId = null;
-    renderSharedFiles([]);
-  }
   _activeTarget = target;
-
   highlightWaysideTarget(host, target);
 
-  // Find existing share ledger
-  let ledger = null;
-  try {
-    ledger = await collab.findExistingShareLedger(target);
-  } catch {}
-  if (generation !== _waysideTargetGeneration) return;
-
-  // Re-query after the await: the Wayside may have been re-rendered meanwhile.
   const chatContainer = host.querySelector('#wayside-chat-container')
     || document.querySelector('#home-wayside #wayside-chat-container');
   if (!chatContainer) return;
 
+  // Instantaneous synchronous lookup: mount widget & render cached messages in 0ms
+  let ledger = peekKnownLedgerForTarget(target);
   _activeLedgerId = ledger ? ledger.sheetId : null;
+  if (!_activeLedgerId) {
+    renderSharedFiles([]);
+  }
 
   teardownWaysideWidget();
   chatContainer.replaceChildren();
@@ -1113,7 +1153,7 @@ async function selectTarget(target, host) {
     displayName,
     userEmail,
     title: `💬 ${target.label}`,
-    subtitle: _activeLedgerId ? `Linked: ${_activeLedgerId}` : 'Linked on first share',
+    subtitle: formatWaysideSubtitle(isAgentTarget, _activeLedgerId, ledger),
     mountTo: chatContainer,
     showClose: true,
     showMinimize: false,
@@ -1141,7 +1181,7 @@ async function selectTarget(target, host) {
       if (signaling?.sheetId) {
         _activeLedgerId = signaling.sheetId;
         widget.setSignaling(signaling.sheetId, signaling.signal);
-        widget.setSubtitle(`Linked: ${signaling.sheetId}`);
+        widget.setSubtitle(formatWaysideSubtitle(isAgentTarget, signaling.sheetId, ledger));
       }
     },
     persistChat: async (msg) => {
@@ -1158,11 +1198,31 @@ async function selectTarget(target, host) {
           threadTitle: _activeAgentThreadTitle,
         };
       }
+      // Optimistically update in-memory snapshot cache so thread switching is instant
+      if (_activeLedgerId) {
+        const cachedSnap = _waysideSnapshotCache.get(_activeLedgerId) || { chat: [], files: [], presence: [] };
+        cachedSnap.chat = [
+          ...(cachedSnap.chat || []),
+          {
+            id: msg.id,
+            sender: userEmail,
+            text: msg.text,
+            ts: new Date().toISOString(),
+            threadId: isAgentTarget ? _activeAgentThreadId : 'default',
+            threadTitle: isAgentTarget ? _activeAgentThreadTitle : '',
+          },
+        ];
+        _waysideSnapshotCache.set(_activeLedgerId, cachedSnap);
+        if (isAgentTarget && _waysideWidget) {
+          const threads = buildAgentThreadList(cachedSnap.chat, _activeAgentThreadId);
+          _waysideWidget.setThreads(threads, _activeAgentThreadId);
+        }
+      }
       const result = await collab.sendChat(chatTarget, msg.text, '', msg.id);
       const nextLedgerId = result?.sheetId || _activeLedgerId;
       if (widget && nextLedgerId && nextLedgerId !== _activeLedgerId) {
         _activeLedgerId = nextLedgerId;
-        widget.setSubtitle(`Linked: ${_activeLedgerId}`);
+        widget.setSubtitle(formatWaysideSubtitle(isAgentTarget, _activeLedgerId, ledger));
         widget.setSignaling(_activeLedgerId, collab.createLedgerSignal(_activeLedgerId));
       }
       if (isAgentTarget) {
@@ -1176,9 +1236,43 @@ async function selectTarget(target, host) {
 
   _waysideWidget = widget;
 
-  if (_activeLedgerId) {
-    await collab.publishPresence(target, { status: 'online', activeWaymarkId: 'home' }).catch(() => {});
+  // Render cached snapshot immediately in 0ms if available
+  if (_activeLedgerId && _waysideSnapshotCache.has(_activeLedgerId)) {
+    applyWaysideSnapshot(host, _waysideSnapshotCache.get(_activeLedgerId), isAgentTarget);
+  } else if (isAgentTarget) {
+    _waysideWidget.setThreads(buildAgentThreadList([], _activeAgentThreadId), _activeAgentThreadId);
+  }
+
+  // Resolve/verify ledger in Drive if not already known
+  if (!ledger) {
+    try {
+      ledger = await collab.findExistingShareLedger(target);
+    } catch {}
     if (generation !== _waysideTargetGeneration) return;
+    if (ledger?.sheetId) {
+      _waysideTargetLedgerCache.set(getWaysideTargetKey(target), ledger);
+      if (ledger.sheetId !== _activeLedgerId) {
+        _activeLedgerId = ledger.sheetId;
+        if (_waysideWidget === widget) {
+          widget.setSignaling(ledger.sheetId, collab.createLedgerSignal(ledger.sheetId));
+          widget.setSubtitle(formatWaysideSubtitle(isAgentTarget, ledger.sheetId, ledger));
+          if (_waysideSnapshotCache.has(ledger.sheetId)) {
+            applyWaysideSnapshot(host, _waysideSnapshotCache.get(ledger.sheetId), isAgentTarget);
+          }
+        }
+      }
+    }
+  } else {
+    _waysideTargetLedgerCache.set(getWaysideTargetKey(target), ledger);
+  }
+
+  // Publish presence in the background — never block chat rendering on Presence tab I/O!
+  if (_activeLedgerId) {
+    collab.publishPresence(target, {
+      sheetId: _activeLedgerId,
+      status: 'online',
+      activeWaymarkId: 'home',
+    }).catch(() => {});
   }
   await refreshWaysideSocial(host);
 }
@@ -1316,6 +1410,32 @@ function buildAgentThreadList(chatRows = [], activeThreadId = 'default') {
   return list;
 }
 
+function applyWaysideSnapshot(host, snap, isAgentTarget) {
+  if (!_waysideWidget || !snap) return;
+  const allChat = snap.chat || [];
+  let visibleChat = allChat;
+  if (isAgentTarget) {
+    const threads = buildAgentThreadList(allChat, _activeAgentThreadId);
+    const activeMeta = threads.find(t => t.id === _activeAgentThreadId);
+    if (activeMeta?.title && !_activeAgentThreadTitle && _activeAgentThreadId !== 'default') {
+      _activeAgentThreadTitle = activeMeta.title;
+    }
+    _waysideWidget.setThreads(threads, _activeAgentThreadId);
+    visibleChat = allChat.filter(m => (m.threadId || 'default') === _activeAgentThreadId);
+  }
+  for (const m of visibleChat) {
+    _waysideWidget.appendMessage({
+      id: m.id,
+      sender: m.sender,
+      text: m.text,
+      ts: m.ts,
+      history: true,
+    });
+  }
+  renderSharedFiles(snap.files || []);
+  applyPresenceRings(host, snap.presence || []);
+}
+
 async function selectAgentThread(threadId, host) {
   const nextId = String(threadId || 'default').trim() || 'default';
   _activeAgentThreadId = nextId;
@@ -1324,6 +1444,12 @@ async function selectAgentThread(threadId, host) {
   _waysideSocialRefreshKey = null;
   if (_waysideWidget) {
     _waysideWidget.clearMessages();
+  }
+  // Instant 0ms thread swap from in-memory snapshot cache
+  if (_activeLedgerId && _waysideSnapshotCache.has(_activeLedgerId)) {
+    applyWaysideSnapshot(host, _waysideSnapshotCache.get(_activeLedgerId), true);
+    refreshWaysideSocial(host).catch(() => {});
+    return;
   }
   await refreshWaysideSocial(host);
 }
@@ -1344,6 +1470,9 @@ async function startNewAgentThread(host, { isClear = false } = {}) {
         ? '🧹 Context cleared! Started a fresh conversation thread — previous chats remain saved in Google Drive above.'
         : '✨ New conversation thread started — switch between saved Google Drive threads anytime above.'
     );
+    const cachedSnap = _activeLedgerId ? _waysideSnapshotCache.get(_activeLedgerId) : null;
+    const threads = buildAgentThreadList(cachedSnap?.chat || [], _activeAgentThreadId);
+    _waysideWidget.setThreads(threads, _activeAgentThreadId);
   }
   showToast(
     isClear
@@ -1351,6 +1480,10 @@ async function startNewAgentThread(host, { isClear = false } = {}) {
       : 'Started a new Waymark AI conversation thread',
     'info'
   );
+  if (_activeLedgerId && _waysideSnapshotCache.has(_activeLedgerId)) {
+    refreshWaysideSocial(host).catch(() => {});
+    return;
+  }
   await refreshWaysideSocial(host);
 }
 
@@ -1362,6 +1495,7 @@ async function refreshWaysideSocial(host) {
       const ledger = await collab.findExistingShareLedger(_activeTarget);
       if (generation === _waysideTargetGeneration && ledger?.sheetId && _waysideWidget) {
         _activeLedgerId = ledger.sheetId;
+        _waysideTargetLedgerCache.set(getWaysideTargetKey(_activeTarget), ledger);
         _waysideWidget.setSignaling(ledger.sheetId, collab.createLedgerSignal(ledger.sheetId));
       }
     } catch {}
@@ -1375,34 +1509,8 @@ async function refreshWaysideSocial(host) {
     if (ledgerId) {
       const snap = await collab.readSocialSnapshot(ledgerId);
       if (generation !== _waysideTargetGeneration || ledgerId !== _activeLedgerId) return;
-      const allChat = snap.chat || [];
-      let visibleChat = allChat;
-      if (isAgentTarget) {
-        const threads = buildAgentThreadList(allChat, _activeAgentThreadId);
-        const activeMeta = threads.find(t => t.id === _activeAgentThreadId);
-        if (activeMeta?.title && !_activeAgentThreadTitle && _activeAgentThreadId !== 'default') {
-          _activeAgentThreadTitle = activeMeta.title;
-        }
-        _waysideWidget.setThreads(threads, _activeAgentThreadId);
-        visibleChat = allChat.filter(m => (m.threadId || 'default') === _activeAgentThreadId);
-      }
-      const sheetMessages = visibleChat.map(m => ({
-        id: m.id,
-        sender: m.sender,
-        text: m.text,
-        ts: m.ts,
-      }));
-      for (const m of sheetMessages) {
-        _waysideWidget.appendMessage({
-          id: m.id,
-          sender: m.sender,
-          text: m.text,
-          ts: m.ts,
-          history: true,
-        });
-      }
-      renderSharedFiles(snap.files || []);
-      applyPresenceRings(host, snap.presence || []);
+      _waysideSnapshotCache.set(ledgerId, snap);
+      applyWaysideSnapshot(host, snap, isAgentTarget);
     } else {
       if (isAgentTarget) {
         const threads = buildAgentThreadList([], _activeAgentThreadId);
@@ -1540,6 +1648,90 @@ async function ensurePrivateGuestAgentLedger(guestEmail) {
   return sheetId;
 }
 
+function getAgentLedgerEntry() {
+  const ledgers = userData.getShareLedgers?.() || [];
+  return ledgers.find(l => l.contactEmail === 'assistant@waymark.internal') || null;
+}
+
+function formatWaysideSubtitle(isAgentTarget, sheetId, ledgerOverride = null) {
+  if (!sheetId) return 'Linked on first share';
+  if (!isAgentTarget) return `Linked: ${sheetId}`;
+  const entry = ledgerOverride || getAgentLedgerEntry();
+  const me = collab.currentEmail();
+  if (entry?.preferred && entry?.ownerEmail && entry.ownerEmail !== me) {
+    return `🤝 Shared Agent (${entry.ownerEmail}) · ${sheetId}`;
+  }
+  if (entry?.preferred && entry?.label && entry.label.startsWith('Shared Agent')) {
+    return `🤝 ${entry.label} · ${sheetId}`;
+  }
+  return `🏠 Personal Agent · ${sheetId}`;
+}
+
+function syncSettingsAgentLabel() {
+  const agentHostLabel = document.getElementById('settings-agent-host-label');
+  if (!agentHostLabel) return;
+  const entry = getAgentLedgerEntry();
+  const me = collab.currentEmail();
+  if (entry?.preferred && entry?.ownerEmail && entry.ownerEmail !== me) {
+    agentHostLabel.textContent = entry.label || `Shared Agent (${entry.ownerEmail})`;
+  } else if (entry?.label) {
+    agentHostLabel.textContent = entry.label;
+  } else {
+    agentHostLabel.textContent = `Personal Agent (${me || 'My Account'})`;
+  }
+}
+
+function parseSheetIdFromInput(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return '';
+  const ledgerParam = text.match(/[?&]ledger=([a-zA-Z0-9_-]+)/);
+  if (ledgerParam?.[1]) return ledgerParam[1];
+  const docsMatch = text.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  if (docsMatch?.[1]) return docsMatch[1];
+  const hashMatch = text.match(/#\/sheet\/([a-zA-Z0-9_-]+)/);
+  if (hashMatch?.[1]) return hashMatch[1];
+  return text;
+}
+
+async function switchActiveAgentLedger(sheetId, host, { preferred = false, ownerEmail = '', label = '' } = {}) {
+  const me = collab.currentEmail();
+  const pairKey = `contact-pair:${['assistant@waymark.internal', me].filter(Boolean).sort().join('::')}`;
+  const existing = getAgentLedgerEntry();
+  const knownList = Array.isArray(existing?.knownAgentLedgers) ? [...existing.knownAgentLedgers] : [];
+  if (preferred && sheetId && !knownList.some(k => k.sheetId === sheetId)) {
+    knownList.push({
+      sheetId,
+      ownerEmail: ownerEmail || '',
+      label: label || (ownerEmail ? `Shared Agent (${ownerEmail})` : `Shared Agent (${sheetId})`),
+      mode: 'shared',
+    });
+  }
+  await userData.addShareLedger(pairKey, sheetId, {
+    contactEmail: 'assistant@waymark.internal',
+    ownerEmail: ownerEmail || me,
+    preferred,
+    label: label || (preferred
+      ? (ownerEmail ? `Shared Agent (${ownerEmail})` : `Shared Agent (${sheetId})`)
+      : `Personal Agent (${me || 'My Account'})`),
+    knownAgentLedgers: knownList,
+  });
+  _activeLedgerId = sheetId;
+  _waysideTargetLedgerCache.set('contact:assistant@waymark.internal', getAgentLedgerEntry() || { sheetId });
+  _waysideSocialRefreshKey = null;
+  if (_waysideWidget) {
+    _waysideWidget.clearMessages();
+    _waysideWidget.setSignaling(sheetId, collab.createLedgerSignal(sheetId));
+    _waysideWidget.setSubtitle(formatWaysideSubtitle(true, sheetId, getAgentLedgerEntry()));
+    if (_waysideSnapshotCache.has(sheetId)) {
+      applyWaysideSnapshot(host, _waysideSnapshotCache.get(sheetId), true);
+    }
+  }
+  syncSettingsAgentLabel();
+  if (host) {
+    await refreshWaysideSocial(host).catch(() => {});
+  }
+}
+
 async function openShareAgentModal(host) {
   let sheetId = _activeLedgerId;
   if (!sheetId) {
@@ -1553,7 +1745,7 @@ async function openShareAgentModal(host) {
         _activeLedgerId = sheetId;
         if (_waysideWidget) {
           _waysideWidget.setSignaling(sheetId, collab.createLedgerSignal(sheetId));
-          _waysideWidget.setSubtitle(`Linked: ${sheetId}`);
+          _waysideWidget.setSubtitle(formatWaysideSubtitle(true, sheetId, ensured));
         }
       }
     } catch (err) {
@@ -1564,6 +1756,229 @@ async function openShareAgentModal(host) {
 
   const existingModal = document.getElementById('wayside-share-agent-modal');
   if (existingModal) existingModal.remove();
+
+  const me = collab.currentEmail();
+  const agentEntry = getAgentLedgerEntry();
+  const knownShared = Array.isArray(agentEntry?.knownAgentLedgers)
+    ? [...agentEntry.knownAgentLedgers]
+    : [];
+  if (agentEntry?.preferred && agentEntry?.sheetId && !knownShared.some(k => k.sheetId === agentEntry.sheetId)) {
+    knownShared.push({
+      sheetId: agentEntry.sheetId,
+      ownerEmail: agentEntry.ownerEmail || '',
+      label: agentEntry.label || `Shared Agent (${agentEntry.ownerEmail || agentEntry.sheetId})`,
+      mode: 'shared',
+    });
+  }
+
+  const hostOptions = [
+    el('option', { value: 'personal' }, [`🏠 My Personal Agent (${me || 'My Account'})`]),
+    ...knownShared.map(item =>
+      el('option', { value: item.sheetId }, [
+        `🤝 ${item.label || (item.ownerEmail ? `Shared Agent (${item.ownerEmail})` : `Shared Agent (${item.sheetId})`)}`,
+      ])
+    ),
+  ];
+
+  const hostSelect = el('select', {
+    id: 'wayside-agent-host-select',
+    className: 'input',
+    on: {
+      change: async () => {
+        const val = hostSelect.value;
+        if (val === 'personal') {
+          try {
+            const personalSheetId = await ensurePrivateGuestAgentLedger(me || 'user@example.com');
+            await switchActiveAgentLedger(personalSheetId, host, {
+              preferred: false,
+              ownerEmail: me,
+              label: `Personal Agent (${me || 'My Account'})`,
+            });
+            showToast('Switched to your Personal Waymark AI Agent', 'success');
+            await openShareAgentModal(host);
+          } catch (err) {
+            showToast(`Could not switch to personal agent: ${err.message}`, 'error');
+          }
+        } else {
+          try {
+            const reg = await collab.registerSharedLedger({
+              sheetId: val,
+              contactEmail: 'assistant@waymark.internal',
+              preferred: true,
+              isShared: true,
+            });
+            await switchActiveAgentLedger(val, host, {
+              preferred: true,
+              ownerEmail: reg?.ownerEmail || '',
+              label: reg?.label || '',
+            });
+            showToast(`Switched to ${reg?.label || 'Shared Waymark AI Agent'}`, 'success');
+            await openShareAgentModal(host);
+          } catch (err) {
+            showToast(`Could not switch agent: ${err.message}`, 'error');
+          }
+        }
+      },
+    },
+  }, hostOptions);
+  hostSelect.value = (agentEntry?.preferred && agentEntry?.sheetId) ? agentEntry.sheetId : 'personal';
+
+  const connectInput = el('input', {
+    id: 'wayside-connect-agent-input',
+    type: 'text',
+    className: 'input',
+    placeholder: 'Paste shared agent invite link or Sheet ID…',
+  });
+
+  const connectBtn = el('button', {
+    id: 'wayside-connect-agent-btn',
+    type: 'button',
+    className: 'btn btn-secondary',
+    on: {
+      click: async () => {
+        const targetSheetId = parseSheetIdFromInput(connectInput.value);
+        if (!targetSheetId) {
+          showToast('Paste a valid shared agent invite link or Google Sheet ID', 'error');
+          return;
+        }
+        connectBtn.disabled = true;
+        try {
+          const reg = await collab.registerSharedLedger({
+            sheetId: targetSheetId,
+            contactEmail: 'assistant@waymark.internal',
+            preferred: true,
+            isShared: true,
+          });
+          await switchActiveAgentLedger(targetSheetId, host, {
+            preferred: true,
+            ownerEmail: reg?.ownerEmail || '',
+            label: reg?.label || `Shared Agent (${reg?.ownerEmail || targetSheetId})`,
+          });
+          showToast(`Connected to ${reg?.label || 'Shared Waymark AI Agent'}!`, 'success');
+          await openShareAgentModal(host);
+        } catch (err) {
+          showToast(`Could not connect shared agent: ${err.message}`, 'error');
+        } finally {
+          connectBtn.disabled = false;
+        }
+      },
+    },
+  }, ['🔗 Connect Agent']);
+
+  const pickSharedBtn = el('button', {
+    id: 'wayside-pick-shared-agent-btn',
+    type: 'button',
+    className: 'btn btn-secondary',
+    on: {
+      click: async () => {
+        try {
+          const connected = await collab.connectSharedLedgerViaPicker({
+            contactEmail: 'assistant@waymark.internal',
+            label: 'Waymark AI',
+          });
+          const picked = connected?.[0];
+          if (!picked?.sheetId) return;
+          await switchActiveAgentLedger(picked.sheetId, host, {
+            preferred: true,
+            ownerEmail: picked.ownerEmail || '',
+            label: picked.label || `Shared Agent (${picked.ownerEmail || picked.sheetId})`,
+          });
+          showToast(`Connected to ${picked.label || 'Shared Waymark AI Agent'}!`, 'success');
+          await openShareAgentModal(host);
+        } catch (err) {
+          showToast(`Could not browse shared agent: ${err.message}`, 'error');
+        }
+      },
+    },
+  }, ['📂 Browse Drive']);
+
+  const oauthTokenInput = el('input', {
+    id: 'wayside-oauth-token-input',
+    type: 'password',
+    className: 'input',
+    placeholder: 'Optional: paste custom OAuth JSON (leave blank to push active browser session)',
+  });
+
+  const oauthStatusEl = el('div', {
+    id: 'wayside-oauth-tunnel-status',
+    className: 'wayside-oauth-tunnel-status',
+  }, [
+    'P2P Tunnel Ready — push your active Waymark OAuth credentials directly to the connected agent daemon.',
+  ]);
+
+  let ackHandler = null;
+  const cleanupAckListener = () => {
+    if (ackHandler) {
+      document.removeEventListener('waymark:agent-oauth-ack', ackHandler);
+      ackHandler = null;
+    }
+  };
+
+  const pushOauthBtn = el('button', {
+    id: 'wayside-push-oauth-btn',
+    type: 'button',
+    className: 'btn btn-primary',
+    on: {
+      click: async () => {
+        pushOauthBtn.disabled = true;
+        cleanupAckListener();
+        try {
+          let tokenBundle = null;
+          const customRaw = String(oauthTokenInput.value || '').trim();
+          if (customRaw) {
+            try {
+              tokenBundle = JSON.parse(customRaw);
+            } catch {
+              tokenBundle = { access_token: customRaw, token_type: 'Bearer' };
+            }
+          } else {
+            tokenBundle = await api.auth.getAgentTokenBundle();
+          }
+          if (!tokenBundle || (!tokenBundle.access_token && !tokenBundle.refresh_token)) {
+            throw new Error('No OAuth token available to push');
+          }
+
+          const requestId = `oauth-${Date.now().toString(36)}`;
+          ackHandler = (e) => {
+            const detail = e.detail || {};
+            if (detail.requestId && detail.requestId !== requestId) return;
+            cleanupAckListener();
+            if (detail.ok) {
+              oauthStatusEl.className = 'wayside-oauth-tunnel-status is-success';
+              oauthStatusEl.textContent = `✓ Agent acknowledged OAuth credentials over P2P tunnel (${detail.hasRefreshToken ? 'with refresh_token' : 'access_token active'}).`;
+              showToast('Agent OAuth credentials updated via P2P tunnel!', 'success');
+            } else {
+              oauthStatusEl.className = 'wayside-oauth-tunnel-status is-error';
+              oauthStatusEl.textContent = `✕ Agent rejected OAuth credentials: ${detail.error || 'Unknown error'}`;
+              showToast(`Agent rejected OAuth update: ${detail.error || 'Unknown error'}`, 'error');
+            }
+          };
+          document.addEventListener('waymark:agent-oauth-ack', ackHandler);
+
+          if (_waysideWidget?.session) {
+            if (!_waysideWidget.session.sheetId && sheetId) {
+              _waysideWidget.setSignaling(sheetId, collab.createLedgerSignal(sheetId));
+            }
+            _waysideWidget.session.send('', 'agent-oauth-setup', {
+              requestId,
+              sender: me,
+              tokenBundle,
+            });
+          }
+
+          oauthStatusEl.className = 'wayside-oauth-tunnel-status is-success';
+          oauthStatusEl.textContent = `🔑 Pushed OAuth token bundle (${tokenBundle.refresh_token ? 'access + refresh token' : 'access token'}) through encrypted P2P tunnel.`;
+          showToast('OAuth token bundle pushed over P2P tunnel', 'info');
+        } catch (err) {
+          oauthStatusEl.className = 'wayside-oauth-tunnel-status is-error';
+          oauthStatusEl.textContent = `✕ Could not push OAuth token: ${err.message}`;
+          showToast(`Could not push OAuth token: ${err.message}`, 'error');
+        } finally {
+          pushOauthBtn.disabled = false;
+        }
+      },
+    },
+  }, ['🔑 Push OAuth Token via P2P Tunnel']);
 
   const defaultInviteLink = sheetId
     ? api.drive.generateShareLink('', '', undefined, {
@@ -1643,6 +2058,7 @@ async function openShareAgentModal(host) {
   }, ['🤝 Share & Copy Invite Link']);
 
   const closeModal = () => {
+    cleanupAckListener();
     modal.remove();
   };
 
@@ -1666,16 +2082,45 @@ async function openShareAgentModal(host) {
         }, ['✕']),
       ]),
       el('div', { className: 'modal-body' }, [
-        el('p', { className: 'text-muted' }, [
-          'Grant a family member or collaborator access to your Waymark AI agent. Once shared, they can open the invite link on any device to authorize the ledger and chat with your agent.',
+        el('div', { className: 'wayside-agent-section' }, [
+          el('div', { className: 'wayside-agent-section-title' }, [
+            el('span', {}, ['🤖 Active Agent Connection (Which Agent to Use)']),
+            pickSharedBtn,
+          ]),
+          el('p', { className: 'wayside-agent-section-desc' }, [
+            'Choose whether Waymark AI routes to your own personal agent ledger or an agent shared with you by another account (such as a spouse or teammate).',
+          ]),
+          el('label', { className: 'form-label', htmlFor: 'wayside-agent-host-select' }, ['Active Agent Host']),
+          hostSelect,
+          el('label', { className: 'form-label', htmlFor: 'wayside-connect-agent-input' }, ['Connect Shared Agent by Invite Link or Sheet ID']),
+          el('div', { className: 'wayside-share-link-row' }, [connectInput, connectBtn]),
         ]),
-        el('label', { className: 'form-label', htmlFor: 'wayside-share-agent-mode' }, ['Sharing Mode']),
-        modeSelect,
-        el('label', { className: 'form-label', htmlFor: 'wayside-share-agent-email' }, ['Collaborator Google Email']),
-        emailInput,
-        el('div', { className: 'modal-actions' }, [grantBtn]),
-        el('label', { className: 'form-label', htmlFor: 'wayside-share-agent-link' }, ['One-Time Invite Link']),
-        el('div', { className: 'wayside-share-link-row' }, [linkInput, copyBtn]),
+        el('div', { className: 'wayside-agent-section' }, [
+          el('div', { className: 'wayside-agent-section-title' }, [
+            el('span', {}, ['🔑 Browser-to-Agent OAuth Setup (P2P Tunnel)']),
+          ]),
+          el('p', { className: 'wayside-agent-section-desc' }, [
+            'Configure the connected Waymark AI daemon directly from your browser over the encrypted WebRTC P2P DataChannel tunnel.',
+          ]),
+          oauthTokenInput,
+          el('div', { className: 'modal-actions' }, [pushOauthBtn]),
+          oauthStatusEl,
+        ]),
+        el('div', { className: 'wayside-agent-section' }, [
+          el('div', { className: 'wayside-agent-section-title' }, [
+            el('span', {}, ['🤝 Share Your Agent with Family / Collaborators']),
+          ]),
+          el('p', { className: 'wayside-agent-section-desc' }, [
+            'Grant a family member or collaborator access to your Waymark AI agent. Once shared, they can open the invite link or paste it above to use your agent.',
+          ]),
+          el('label', { className: 'form-label', htmlFor: 'wayside-share-agent-mode' }, ['Sharing Mode']),
+          modeSelect,
+          el('label', { className: 'form-label', htmlFor: 'wayside-share-agent-email' }, ['Collaborator Google Email']),
+          emailInput,
+          el('div', { className: 'modal-actions' }, [grantBtn]),
+          el('label', { className: 'form-label', htmlFor: 'wayside-share-agent-link' }, ['One-Time Invite Link']),
+          el('div', { className: 'wayside-share-link-row' }, [linkInput, copyBtn]),
+        ]),
       ]),
     ]),
   ]);

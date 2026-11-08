@@ -551,6 +551,54 @@
   flex: 1 1 auto;
   min-width: 0;
 }
+#wayside-share-agent-modal .modal {
+  width: min(92vw, 620px);
+  max-width: 620px;
+}
+.wayside-agent-section {
+  padding: 12px 14px;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 10px;
+  background: var(--color-bg-secondary, rgba(148, 163, 184, 0.06));
+  margin-bottom: 12px;
+}
+.wayside-agent-section:last-child {
+  margin-bottom: 0;
+}
+.wayside-agent-section-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text, #0f172a);
+  margin: 0 0 4px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.wayside-agent-section-desc {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary, #64748b);
+  margin: 0 0 8px 0;
+  line-height: 1.4;
+}
+.wayside-oauth-tunnel-status {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  background: rgba(59, 130, 246, 0.08);
+  color: var(--color-text, #1e293b);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
+.wayside-oauth-tunnel-status.is-success {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.35);
+}
+.wayside-oauth-tunnel-status.is-error {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+}
 div#wayboard-root .wayside-placeholder { display: flex; flex-direction: column; text-align: center; justify-content: center; align-items: center; }
 
 /* ---------- Shared light / dark theme for every Wayboard layout ---------- */
