@@ -315,6 +315,22 @@ wayside-setup: ## Configure headless Google OAuth + MCP config the Wayside daemo
 	node scripts/setup-headless-auth.mjs
 	node scripts/setup-mcp-config.mjs
 
+wayside-mcp-config: ## (Re)point AGY's MCP servers at THIS repo and drop any hardcoded per-user token
+	node scripts/setup-mcp-config.mjs
+
+wayside-restart: ## Restart the Wayside orchestrator systemd service (bare-metal) so it reloads code
+	@if systemctl --user list-unit-files 2>/dev/null | grep -q '^waymark-wayside.service'; then \
+		systemctl --user restart waymark-wayside.service && echo "✓ Restarted waymark-wayside.service"; \
+		systemctl --user --no-pager status waymark-wayside.service | head -4; \
+	else \
+		echo "waymark-wayside.service not installed. Run: make wayside-install"; \
+	fi
+
+wayside-reload: wayside-mcp-config wayside-restart ## Regenerate AGY MCP config from this repo, then restart the orchestrator
+	@echo "✓ AGY stack reloaded from $(CURDIR). New requests use this repo's MCP code + per-requester auth."
+	@echo "  Note: kill any stale MCP server processes from old paths so AGY respawns fresh:"
+	@echo "    pgrep -af 'mcp/(waymark|google-sheets).mjs'   # inspect, then kill the stale ones"
+
 wayside-auth-check: ## Check the Google OAuth / Service Account credentials for the Wayside daemon
 	node scripts/setup-headless-auth.mjs --check
 
