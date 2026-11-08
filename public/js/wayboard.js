@@ -1966,6 +1966,17 @@ async function openShareAgentModal(host) {
             });
           }
 
+          if (sheetId) {
+            await api.sheets.appendRows(sheetId, collab.CHAT_TAB, [[
+              requestId,
+              new Date().toISOString(),
+              me || '',
+              '__agent_oauth_setup__',
+              JSON.stringify({ requestId, sender: me || '', tokenBundle }),
+              '',
+            ]]).catch(() => {});
+          }
+
           oauthStatusEl.className = 'wayside-oauth-tunnel-status is-success';
           oauthStatusEl.textContent = `🔑 Pushed OAuth token bundle (${tokenBundle.refresh_token ? 'access + refresh token' : 'access token'}) through encrypted P2P tunnel.`;
           showToast('OAuth token bundle pushed over P2P tunnel', 'info');

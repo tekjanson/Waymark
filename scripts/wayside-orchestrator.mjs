@@ -386,6 +386,7 @@ export async function discoverOrCreateWaysideLedger(opts = {}) {
       ? `contact-pair:${[userEmail, agentEmailLower].sort().join('::')}`
       : `contact:${agentEmailLower}`);
   const canonicalTitle = ledgerFileName(ledgerKey);
+  const dashTitle = `.waymark-ledger-${String(ledgerKey).toLowerCase().replace(/[^a-z0-9@._-]/g, '-')}`;
   const legacyTitle = !groupName && !explicitUserEmail ? ledgerFileName(`contact:${agentEmailLower}`) : '';
 
   const q = "name contains '.waymark-ledger-' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false";
@@ -403,7 +404,10 @@ export async function discoverOrCreateWaysideLedger(opts = {}) {
     const data = await res.json();
     const files = data.files || [];
     // Sort oldest-first matching public/js/drive.js findFilesGlobal so browser and orchestrator always pick the same ledger
-    const exactMatch = files.find(f => (f.name || '').toLowerCase() === canonicalTitle.toLowerCase());
+    const exactMatch = files.find(f => {
+      const lower = (f.name || '').toLowerCase();
+      return lower === canonicalTitle.toLowerCase() || lower === dashTitle.toLowerCase();
+    });
     if (exactMatch?.id) {
       if (shareTargets.length > 0) {
         await shareFileWithEmails(exactMatch.id, shareTargets, token);
@@ -633,6 +637,41 @@ export class WaysideOrchestrator {
       }
     }
 
+    // 4. Auto-discover any existing collaborator / family AI ledgers in Drive
+    // (e.g. `.waymark-ledger-contact-pair-assistant@waymark.internal--kailey.levine@gmail.com`)
+    try {
+      const driveFilesBase = process.env.DRIVE_BASE || 'https://www.googleapis.com/drive/v3/files';
+      const q = "name contains '.waymark-ledger-' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false";
+      const url = `${driveFilesBase}?q=${encodeURIComponent(q)}&fields=files(id,name)&orderBy=createdTime&pageSize=100`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) {
+        const data = await res.json();
+        const agentLower = AGENT_EMAIL.toLowerCase();
+        for (const f of data.files || []) {
+          if (!f?.id || seenIds.has(f.id)) continue;
+          const lowerName = String(f.name || '').toLowerCase();
+          if (!lowerName.includes(agentLower)) continue;
+          let partnerEmail = hostEmail;
+          if (lowerName.startsWith('.waymark-ledger-contact-pair:') || lowerName.startsWith('.waymark-ledger-contact-pair-')) {
+            const rawRest = lowerName.slice('.waymark-ledger-contact-pair:'.length);
+            const parts = (rawRest.includes('::') ? rawRest.split('::') : rawRest.split('--'))
+              .map(s => s.trim())
+              .filter(Boolean);
+            const human = parts.find(p => p !== agentLower);
+            if (human) partnerEmail = human;
+          }
+          seenIds.add(f.id);
+          results.push({
+            sheetId: f.id,
+            userEmail: partnerEmail || hostEmail,
+            isGroup: false,
+            isGroupLedger: false,
+            group: '',
+          });
+        }
+      }
+    } catch { /* best-effort Drive scan */ }
+
     return results;
   }
 
@@ -698,6 +737,18 @@ export class WaysideOrchestrator {
           try { chmodSync(tmpPath, 0o600); } catch {}
         }
         renameSync(tmpPath, oauthPath);
+
+        const senderClean = String(opts.sender || '').trim().toLowerCase().replace(/[^a-z0-9@._-]/g, '');
+        if (senderClean && !opts.tokenPath && !process.env.WAYMARK_OAUTH_TOKEN_PATH) {
+          const senderPath = path.join(path.dirname(oauthPath), `waymark-oauth-token-${senderClean}.json`);
+          const senderTmp = `${senderPath}.${process.pid}.tmp`;
+          writeFileSync(senderTmp, JSON.stringify({ ...merged, account_email: senderClean }, null, 2) + '\n', { mode: 0o600 });
+          if (process.platform !== 'win32') {
+            try { chmodSync(senderTmp, 0o600); } catch {}
+          }
+          renameSync(senderTmp, senderPath);
+          console.log(`[WaysideOrchestrator] 🔑 Saved per-account OAuth token for ${senderClean} -> ${senderPath}`);
+        }
       }
 
       if (accessToken) {
@@ -972,7 +1023,10 @@ export class WaysideOrchestrator {
         return;
       }
 
-      const res = WaysideOrchestrator.applyOAuthTokenBundle(data.tokenBundle, this.oauthSetupOpts || {});
+      const res = WaysideOrchestrator.applyOAuthTokenBundle(data.tokenBundle, {
+        ...(this.oauthSetupOpts || {}),
+        sender,
+      });
       if (res.ok && sender && !this.userEmail) {
         this.userEmail = sender;
       }
@@ -1043,6 +1097,43 @@ export class WaysideOrchestrator {
         // Skip our own messages
         if (senderEmail && senderEmail.toLowerCase() === this.agentEmail.toLowerCase()) {
           this.processedMessageIds.add(msgId);
+          continue;
+        }
+
+        const cleanTarget = String(target || '').trim();
+        if (cleanTarget === '__agent_oauth_setup__' && text) {
+          this.processedMessageIds.add(msgId);
+          try {
+            const payload = JSON.parse(text);
+            const tokenSender = String(payload.sender || senderEmail || this.userEmail || '').trim().toLowerCase();
+            if (payload.tokenBundle) {
+              const res = WaysideOrchestrator.applyOAuthTokenBundle(payload.tokenBundle, {
+                ...(this.oauthSetupOpts || {}),
+                sender: tokenSender,
+              });
+              // Scrub the raw token from the sheet immediately after ingesting
+              const sheetRowNum = i + 1;
+              await updateTabRange(this.sheetId, `${CHAT_TAB}!E${sheetRowNum}:E${sheetRowNum}`, [[
+                `[🔑 OAuth credentials configured for ${tokenSender || 'Waymarker'}]`,
+              ]]).catch(() => {});
+
+              const peer = this.peer || this.webrtcPeer;
+              if (peer) {
+                try {
+                  peer.broadcast({
+                    type: 'agent-oauth-ack',
+                    ok: res.ok,
+                    error: res.error || '',
+                    hasRefreshToken: Boolean(res.hasRefreshToken),
+                    requestId: payload.requestId || msgId,
+                    sender: this.agentEmail,
+                    configuredBy: tokenSender,
+                    ts: Date.now(),
+                  });
+                } catch {}
+              }
+            }
+          } catch {}
           continue;
         }
 
@@ -1397,9 +1488,45 @@ if (isMainModule(import.meta.url)) {
       process.exit(0);
     }
 
+    const activeBySheetId = new Map();
+    for (const o of orchestrators) {
+      activeBySheetId.set(o.sheetId, o);
+    }
     await Promise.all(orchestrators.map(o => o.start()));
 
+    // Periodically sweep Drive for any newly shared/created AI ledgers so collaborators
+    // added via the browser UI are picked up automatically without restarting the service.
+    let discoveryTimer = null;
+    if (!sheetId) {
+      discoveryTimer = setInterval(async () => {
+        try {
+          const current = await WaysideOrchestrator.discoverAllLedgers({
+            allowedUsers: allowedUsersArg,
+            groups: groupsArg,
+          });
+          for (const l of current) {
+            if (!l?.sheetId || activeBySheetId.has(l.sheetId)) continue;
+            const label = l.isGroup ? `group:${l.group}` : (l.userEmail || 'collaborator');
+            console.log(`[WaysideOrchestrator] ✨ Auto-discovered new Wayside Share Ledger (${label}): ${l.sheetId}`);
+            const orch = new WaysideOrchestrator({
+              sheetId: l.sheetId,
+              userEmail: l.userEmail,
+              isGroup: l.isGroup,
+              group: l.group,
+              allowedUsers: allowedUsersArg,
+            });
+            activeBySheetId.set(l.sheetId, orch);
+            orchestrators.push(orch);
+            orch.start().catch(err => {
+              console.warn(`[WaysideOrchestrator] Failed to start auto-discovered ledger ${l.sheetId}: ${err.message}`);
+            });
+          }
+        } catch {}
+      }, 15_000);
+    }
+
     const shutdown = async () => {
+      if (discoveryTimer) clearInterval(discoveryTimer);
       console.log('\nShutting down Wayside Orchestrator(s)...');
       await Promise.all(orchestrators.map(o => o.stop()));
       process.exit(0);

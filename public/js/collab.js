@@ -1563,6 +1563,8 @@ function formatChatThreadTarget(target = {}, threadId = 'default', threadTitle =
 function chatFromRows(rows) {
   const seen = new Set();
   return rows.filter(row => {
+    const targetVal = String(row.Target_Group_Or_Contact || '').trim();
+    if (targetVal.startsWith('__agent_oauth_')) return false;
     const key = row.Message_ID || `${row.Sender_Email || ''}:${row.Timestamp_UTC || ''}:${row.Message_Text || ''}`;
     if (seen.has(key)) return false;
     seen.add(key);
