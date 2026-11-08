@@ -45,9 +45,7 @@ if (credPath && existsSync(credPath)) {
   }
 }
 
-async function getUserOAuthToken() {
-  const tokenPath = process.env.WAYMARK_OAUTH_TOKEN_PATH ||
-    path.join(os.homedir(), ".config", "gcloud", "waymark-oauth-token.json");
+async function loadTokenFromPath(tokenPath) {
   let tokenData;
   try {
     tokenData = JSON.parse(readFileSync(tokenPath, "utf8"));
@@ -85,6 +83,30 @@ async function getUserOAuthToken() {
   }
 
   return tokenData.access_token;
+}
+
+async function getUserOAuthToken() {
+  const gcloudDir = path.join(os.homedir(), ".config", "gcloud");
+  if (!process.env.WAYMARK_OAUTH_TOKEN_PATH) {
+    try {
+      const activePath = path.join(gcloudDir, "waymark-active-requester.json");
+      if (existsSync(activePath)) {
+        const activeMeta = JSON.parse(readFileSync(activePath, "utf8"));
+        if (
+          activeMeta?.tokenPath &&
+          existsSync(activeMeta.tokenPath) &&
+          Date.now() - Number(activeMeta.updatedAt || 0) < 10 * 60 * 1000
+        ) {
+          const reqToken = await loadTokenFromPath(activeMeta.tokenPath);
+          if (reqToken) return reqToken;
+        }
+      }
+    } catch {}
+  }
+
+  const defaultPath = process.env.WAYMARK_OAUTH_TOKEN_PATH ||
+    path.join(gcloudDir, "waymark-oauth-token.json");
+  return loadTokenFromPath(defaultPath);
 }
 
 async function getSaToken() {

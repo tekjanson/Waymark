@@ -2708,6 +2708,8 @@ function openSettingsModal() {
     const me = (currentUser.email || '').trim().toLowerCase();
     if (agentEntry?.preferred && agentEntry?.ownerEmail && agentEntry.ownerEmail !== me) {
       agentHostLabel.textContent = agentEntry.label || `Shared Agent (${agentEntry.ownerEmail})`;
+    } else if (agentEntry?.preferred && agentEntry?.label) {
+      agentHostLabel.textContent = agentEntry.label;
     } else if (agentEntry?.label) {
       agentHostLabel.textContent = agentEntry.label;
     } else {

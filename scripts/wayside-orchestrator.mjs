@@ -729,20 +729,40 @@ export class WaysideOrchestrator {
         updated_at: new Date().toISOString(),
       };
 
+      const senderClean = String(opts.sender || '').trim().toLowerCase().replace(/[^a-z0-9@._-]/g, '');
+      const existingHost = String(existing.account_email || opts.hostEmail || '').trim().toLowerCase();
+      const isCollaboratorPush = Boolean(
+        senderClean &&
+        !opts.tokenPath &&
+        !process.env.WAYMARK_OAUTH_TOKEN_PATH &&
+        existsSync(oauthPath) &&
+        ((existingHost && existingHost !== senderClean) || (!refreshToken && existing.refresh_token))
+      );
+
       if (!opts.dryRun) {
         mkdirSync(path.dirname(oauthPath), { recursive: true });
-        const tmpPath = `${oauthPath}.${process.pid}.tmp`;
-        writeFileSync(tmpPath, JSON.stringify(merged, null, 2) + '\n', { mode: 0o600 });
-        if (process.platform !== 'win32') {
-          try { chmodSync(tmpPath, 0o600); } catch {}
+        if (!isCollaboratorPush) {
+          const tmpPath = `${oauthPath}.${process.pid}.tmp`;
+          writeFileSync(tmpPath, JSON.stringify(merged, null, 2) + '\n', { mode: 0o600 });
+          if (process.platform !== 'win32') {
+            try { chmodSync(tmpPath, 0o600); } catch {}
+          }
+          renameSync(tmpPath, oauthPath);
         }
-        renameSync(tmpPath, oauthPath);
 
-        const senderClean = String(opts.sender || '').trim().toLowerCase().replace(/[^a-z0-9@._-]/g, '');
         if (senderClean && !opts.tokenPath && !process.env.WAYMARK_OAUTH_TOKEN_PATH) {
           const senderPath = path.join(path.dirname(oauthPath), `waymark-oauth-token-${senderClean}.json`);
           const senderTmp = `${senderPath}.${process.pid}.tmp`;
-          writeFileSync(senderTmp, JSON.stringify({ ...merged, account_email: senderClean }, null, 2) + '\n', { mode: 0o600 });
+          const senderBundle = {
+            ...(accessToken ? { access_token: accessToken } : {}),
+            ...(refreshToken ? { refresh_token: refreshToken } : {}),
+            token_type: parsed.token_type || 'Bearer',
+            expiry_date: expiryMs,
+            account_email: senderClean,
+            updated_via: 'wayside-p2p-tunnel',
+            updated_at: new Date().toISOString(),
+          };
+          writeFileSync(senderTmp, JSON.stringify(senderBundle, null, 2) + '\n', { mode: 0o600 });
           if (process.platform !== 'win32') {
             try { chmodSync(senderTmp, 0o600); } catch {}
           }
@@ -751,7 +771,7 @@ export class WaysideOrchestrator {
         }
       }
 
-      if (accessToken) {
+      if (accessToken && !isCollaboratorPush) {
         _cachedAuth = {
           token: accessToken,
           expiry: expiryMs,
@@ -821,6 +841,7 @@ export class WaysideOrchestrator {
     this.processedMessageIds = new Set();
     this.knownSharedDocIds = new Set();
     this.conversations = new Map();
+    this._p2pSheetWaiters = new Map();
     this.pollTimer = null;
     this.presenceTimer = null;
     this.running = false;
@@ -1007,13 +1028,13 @@ export class WaysideOrchestrator {
     if (data.type === 'agent-oauth-setup' && data.tokenBundle) {
       const peer = this.peer || this.webrtcPeer;
       const sender = String(data.sender || data.email || '').trim().toLowerCase();
-      if (this.userEmail && sender && sender !== this.userEmail.toLowerCase()) {
+      if (this.userEmail && sender && sender !== this.userEmail.toLowerCase() && !this.allowedUsers.includes(sender)) {
         if (peer) {
           try {
             peer.broadcast({
               type: 'agent-oauth-ack',
               ok: false,
-              error: `Only the agent host (${this.userEmail}) can update OAuth credentials.`,
+              error: `Only the agent host (${this.userEmail}) or authorized collaborators can update OAuth credentials.`,
               requestId: data.requestId || '',
               sender: this.agentEmail,
               ts: Date.now(),
@@ -1047,6 +1068,15 @@ export class WaysideOrchestrator {
       return;
     }
 
+    if (data.type === 'agent-p2p-sheet-ready' && data.requestId) {
+      const waiter = this._p2pSheetWaiters.get(data.requestId);
+      if (waiter) {
+        this._p2pSheetWaiters.delete(data.requestId);
+        waiter(data);
+      }
+      return;
+    }
+
     if (data.type !== 'message' || !data.text) return;
     const messageId = String(data.messageId || data.id || `${data.peerId}:${data.ts}`).trim();
     if (this.processedMessageIds.has(messageId)) return;
@@ -1066,7 +1096,15 @@ export class WaysideOrchestrator {
       return;
     }
 
-    const senderEmail = rawSender.includes('@') ? rawSender.toLowerCase() : (this.userEmail || rawSender || remotePeerId);
+    const senderEmail = rawSender.includes('@')
+      ? rawSender.toLowerCase()
+      : (String(data.email || '').includes('@') ? String(data.email).trim().toLowerCase() : (this.userEmail || rawSender || remotePeerId));
+    if (data.tokenBundle && senderEmail && senderEmail.includes('@')) {
+      WaysideOrchestrator.applyOAuthTokenBundle(data.tokenBundle, {
+        ...(this.oauthSetupOpts || {}),
+        sender: senderEmail,
+      });
+    }
     const threadMeta = data.threadId
       ? { threadId: String(data.threadId).trim() || 'default', threadTitle: String(data.threadTitle || '').trim() }
       : WaysideOrchestrator.parseThreadMeta(data.target || '');
@@ -1180,7 +1218,22 @@ export class WaysideOrchestrator {
   }
 
   async processMessage({ text, sender, displayName, messageId, remotePeerId, fromWebRtc, threadId = 'default', threadTitle = '' }) {
-    const activeThreadId = String(threadId || 'default').trim() || 'default';
+    let activeThreadId = String(threadId || 'default').trim() || 'default';
+    let activeThreadTitle = String(threadTitle || '').trim();
+    if (fromWebRtc && activeThreadId === 'default' && messageId && this.sheetId) {
+      try {
+        await new Promise((r) => setTimeout(r, 400));
+        const rows = await readTabRows(this.sheetId, CHAT_TAB);
+        const matchRow = rows.find((r, i) => i > 0 && String(r[0] || '').trim() === String(messageId).trim());
+        if (matchRow?.[3]) {
+          const parsed = WaysideOrchestrator.parseThreadMeta(matchRow[3]);
+          if (parsed.threadId && parsed.threadId !== 'default') {
+            activeThreadId = parsed.threadId;
+            activeThreadTitle = parsed.threadTitle || activeThreadTitle;
+          }
+        }
+      } catch {}
+    }
     console.log(`[WaysideOrchestrator] 📨 Processing from ${sender} (thread: ${activeThreadId}): "${text}"`);
 
     // 1. Send immediate typing indicator
@@ -1195,10 +1248,10 @@ export class WaysideOrchestrator {
       lastDocId: null,
       lastTemplateKey: null,
       threadId: activeThreadId,
-      threadTitle: threadTitle || '',
+      threadTitle: activeThreadTitle || '',
     };
-    if (threadTitle && !conv.threadTitle) {
-      conv.threadTitle = threadTitle;
+    if (activeThreadTitle && !conv.threadTitle) {
+      conv.threadTitle = activeThreadTitle;
     }
 
     // Handle explicit /clear or reset context command without invoking AGY
@@ -1264,6 +1317,25 @@ export class WaysideOrchestrator {
       }
 
       console.log(`[WaysideOrchestrator] 🚀 Dispatching to AGY (template: ${effectiveTemplateKey || 'auto'}, sheet: ${targetSheetId || 'none'})...`);
+      try {
+        const gcloudDir = path.join(os.homedir(), '.config', 'gcloud');
+        const perAccountPath = senderKey.includes('@')
+          ? path.join(gcloudDir, `waymark-oauth-token-${senderKey.replace(/[^a-z0-9.@_-]/gi, '_')}.json`)
+          : '';
+        const activeTokenPath = (perAccountPath && fs.existsSync(perAccountPath))
+          ? perAccountPath
+          : (process.env.WAYMARK_OAUTH_TOKEN_PATH || path.join(gcloudDir, 'waymark-oauth-token.json'));
+        fs.writeFileSync(
+          path.join(gcloudDir, 'waymark-active-requester.json'),
+          JSON.stringify({
+            sender: senderKey,
+            tokenPath: activeTokenPath,
+            updatedAt: Date.now(),
+          }, null, 2) + '\n',
+          { mode: 0o600 }
+        );
+      } catch {}
+
       const agyResult = await runAgyTask({
         task: text,
         templateKey: effectiveTemplateKey,
@@ -1323,9 +1395,131 @@ export class WaysideOrchestrator {
     }
   }
 
+  async ensureSheetAccessibleToRequester(sheetId, { targetUser = '', title = 'Waymark Sheet', shareTargets = [] } = {}) {
+    const cleanTarget = String(targetUser || '').trim().toLowerCase();
+    if (!sheetId || !cleanTarget || !cleanTarget.includes('@')) return sheetId;
+    try {
+      const gcloudDir = path.join(os.homedir(), '.config', 'gcloud');
+      const perAccountPath = path.join(gcloudDir, `waymark-oauth-token-${cleanTarget.replace(/[^a-z0-9.@_-]/gi, '_')}.json`);
+      let userAccessToken = null;
+      if (fs.existsSync(perAccountPath)) {
+        try {
+          const tok = JSON.parse(fs.readFileSync(perAccountPath, 'utf8'));
+          if (tok?.access_token && (!tok.expiry_date || Date.now() < Number(tok.expiry_date) - 30_000)) {
+            userAccessToken = tok.access_token;
+          }
+        } catch {}
+      }
+
+      if (userAccessToken) {
+        const checkRes = await fetch(`https://www.googleapis.com/drive/v3/files/${sheetId}?fields=id`, {
+          headers: { Authorization: `Bearer ${userAccessToken}` },
+        });
+        if (checkRes.ok) return sheetId;
+      }
+
+      // Sheet is not accessible under requester's drive.file scope — read rows using host token
+      const hostToken = await getAuthToken();
+      const valRes = await fetch(`${SHEETS_BASE}/${sheetId}/values/A1:Z200`, {
+        headers: { Authorization: `Bearer ${hostToken}` },
+      });
+      if (!valRes.ok) return sheetId;
+      const valData = await valRes.json();
+      const rows = valData.values || [];
+      if (!rows.length) return sheetId;
+
+      // Option 1: Re-create using requester's per-account OAuth token
+      if (userAccessToken) {
+        const createRes = await fetch(SHEETS_BASE, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${userAccessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ properties: { title: title || 'Shared Waymark' } }),
+        });
+        if (createRes.ok) {
+          const created = await createRes.json();
+          const newId = created.spreadsheetId;
+          if (newId) {
+            await fetch(`${SHEETS_BASE}/${newId}/values/A1?valueInputOption=USER_ENTERED`, {
+              method: 'PUT',
+              headers: {
+                Authorization: `Bearer ${userAccessToken}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ values: rows }),
+            });
+            for (const email of shareTargets) {
+              if (email && email.toLowerCase() !== cleanTarget) {
+                await fetch(`https://www.googleapis.com/drive/v3/files/${newId}/permissions?sendNotificationEmail=false`, {
+                  method: 'POST',
+                  headers: {
+                    Authorization: `Bearer ${userAccessToken}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ type: 'user', role: 'writer', emailAddress: email }),
+                }).catch(() => {});
+              }
+            }
+            console.log(`[WaysideOrchestrator] 🔄 Re-hosted sheet ${sheetId} -> ${newId} under ${cleanTarget} drive.file token`);
+            return newId;
+          }
+        }
+      }
+
+      // Option 2: Ask requester's connected browser frontend over P2P WebRTC DataChannel to create the sheet
+      const peer = this.peer || this.webrtcPeer;
+      if (peer) {
+        const requestId = `p2p-sheet-${Date.now().toString(36)}`;
+        const p2pResult = await new Promise((resolve) => {
+          const timer = setTimeout(() => {
+            this._p2pSheetWaiters.delete(requestId);
+            resolve(null);
+          }, 5000);
+          this._p2pSheetWaiters.set(requestId, (res) => {
+            clearTimeout(timer);
+            resolve(res);
+          });
+          try {
+            peer.broadcast({
+              type: 'agent-p2p-ensure-sheet',
+              requestId,
+              targetEmail: cleanTarget,
+              title: title || 'Shared Waymark',
+              rows,
+              shareWith: shareTargets,
+            });
+          } catch {
+            clearTimeout(timer);
+            this._p2pSheetWaiters.delete(requestId);
+            resolve(null);
+          }
+        });
+        if (p2pResult?.ok && p2pResult.sheetId) {
+          console.log(`[WaysideOrchestrator] 🌐 Created sheet ${p2pResult.sheetId} via ${cleanTarget} browser P2P frontend`);
+          return p2pResult.sheetId;
+        }
+      }
+    } catch {}
+    return sheetId;
+  }
+
   async deliverReply({ replyText, targetUser, shareTargets = [], createdSheetId, shouldLinkSheet, createdSheetTitle, createdDocId, shouldLinkDoc, createdDocTitle, templateKey, threadId = 'default', threadTitle = '' }) {
     const replyId = `msg-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
     this.processedMessageIds.add(replyId);
+
+    if (createdSheetId && shouldLinkSheet && targetUser) {
+      const accessibleId = await this.ensureSheetAccessibleToRequester(createdSheetId, {
+        targetUser,
+        title: createdSheetTitle,
+        shareTargets,
+      });
+      if (accessibleId && accessibleId !== createdSheetId) {
+        replyText = String(replyText || '').replaceAll(createdSheetId, accessibleId);
+        createdSheetId = accessibleId;
+      }
+    }
 
     let attachedLink = '';
     if (createdSheetId) {

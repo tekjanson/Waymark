@@ -72,8 +72,10 @@ export class SocialChatWidget {
     this.password = opts.password || null;
     this.titleText = opts.title || (this.mode === 'embedded' ? '💬 Wayside' : '📡 Live Chat');
     this.subtitleText = opts.subtitle || (this.mode === 'embedded' ? 'Pick a crew or Waymarker to trade Waymarks' : 'Listening…');
+    this.baseSubtitle = this.subtitleText;
     this.signal = opts.signal || null;
     this.persistChat = opts.persistChat || null;
+    this.getMessageExtra = opts.getMessageExtra || null;
 
     this.userEmail = opts.userEmail || '';
     this.onClose = opts.onClose || (() => {});
@@ -109,13 +111,17 @@ export class SocialChatWidget {
       signal: this.signal,
       persistChat: this.persistChat,
       onMessage: (msg) => {
-        this.appendMessage({
-          id: msg.id,
-          sender: msg.sender || msg.name || 'Collaborator',
-          text: msg.text,
-          ts: msg.ts,
-          self: msg.self,
-        });
+        const msgThread = String(msg.threadId || 'default').trim() || 'default';
+        const currentThread = String(this._activeThreadId || 'default').trim() || 'default';
+        if (!this.showAgentThreads || msg.self || msgThread === currentThread) {
+          this.appendMessage({
+            id: msg.id,
+            sender: msg.sender || msg.name || 'Collaborator',
+            text: msg.text,
+            ts: msg.ts,
+            self: msg.self,
+          });
+        }
         if (!msg.self && typeof this.onPeerMessage === 'function') {
           this.onPeerMessage(msg);
         }
@@ -126,8 +132,8 @@ export class SocialChatWidget {
           this.peerCount.textContent = `${count} peer${count !== 1 ? 's' : ''}`;
         }
         if (this.mode === 'embedded' && this.subtitle && !this.session.inCall) {
-          const linkText = this.sheetId ? `Linked: ${this.sheetId}` : 'Linked on first share';
-          this.setSubtitle(`P2P · ${count} connected · ${linkText}`);
+          const base = this.baseSubtitle || (this.sheetId ? `Linked: ${this.sheetId}` : 'Linked on first share');
+          this.setSubtitle(`P2P · ${count} connected · ${base}`, { isBase: false });
         }
       },
       onStatusChanged: (status) => {
@@ -188,8 +194,11 @@ export class SocialChatWidget {
     if (this.titleEl) this.titleEl.textContent = title;
   }
 
-  setSubtitle(subtitle) {
+  setSubtitle(subtitle, { isBase = true } = {}) {
     this.subtitleText = subtitle;
+    if (isBase && subtitle) {
+      this.baseSubtitle = subtitle;
+    }
     if (this.subtitleTextEl) this.subtitleTextEl.textContent = subtitle;
   }
 
@@ -198,7 +207,9 @@ export class SocialChatWidget {
     this.sheetId = String(sheetId);
     const connect = this.session.setSignaling(this.sheetId, signal);
     if (this.mode === 'embedded' && !this.session.inCall) {
-      this.setSubtitle(`Linked: ${this.sheetId}`);
+      if (!this.baseSubtitle || this.baseSubtitle === 'Linked on first share' || this.baseSubtitle.startsWith('Linked:')) {
+        this.setSubtitle(`Linked: ${this.sheetId}`);
+      }
     }
     return connect;
   }
@@ -872,15 +883,18 @@ export class SocialChatWidget {
   }
 
   setThreads(threads = [], activeThreadId = 'default') {
+    this._activeThreadId = String(activeThreadId || 'default').trim() || 'default';
     if (!this.threadSelect) return;
     const list = Array.isArray(threads) && threads.length
       ? threads
-      : [{ id: 'default', label: '💬 General Conversation (0)' }];
+      : [{ id: 'default', label: '💬 General Conversation (0)', title: 'General Conversation' }];
+    const activeMeta = list.find(t => t.id === this._activeThreadId);
+    this._activeThreadTitle = activeMeta?.title || '';
     this.threadSelect.replaceChildren(
       ...list.map(t => el('option', { value: t.id }, [t.label]))
     );
-    const hasActive = list.some(t => t.id === activeThreadId);
-    this.threadSelect.value = hasActive ? activeThreadId : list[0].id;
+    const hasActive = list.some(t => t.id === this._activeThreadId);
+    this.threadSelect.value = hasActive ? this._activeThreadId : list[0].id;
   }
 
   appendMessage({ id, sender, text, ts, self = false, failed = false, history = false }) {
@@ -949,7 +963,11 @@ export class SocialChatWidget {
   sendMessage() {
     const text = this.input.value.trim();
     if (!text || !this.session) return;
-    this.session.sendMessage(text);
+    const baseExtra = this._activeThreadId && this._activeThreadId !== 'default'
+      ? { threadId: this._activeThreadId, threadTitle: this._activeThreadTitle || '' }
+      : {};
+    const customExtra = typeof this.getMessageExtra === 'function' ? (this.getMessageExtra(text) || {}) : {};
+    this.session.sendMessage(text, { ...baseExtra, ...customExtra });
     this.input.value = '';
   }
 

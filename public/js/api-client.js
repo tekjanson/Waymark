@@ -289,27 +289,21 @@ export const api = {
     },
 
     async getAgentTokenBundle() {
-      try {
-        const res = await fetch(BASE + '/auth/agent-token', { method: 'POST', credentials: 'include' });
-        if (res.ok) {
-          const bundle = await res.json();
-          if (isLocal && window.__WAYMARK_RECORDS) {
-            window.__WAYMARK_RECORDS.push({
-              type: 'agent-token-bundle',
-              bundle,
-              createdAt: new Date().toISOString(),
-            });
-          }
-          return bundle;
-        }
-      } catch { /* fallback to current access token */ }
       const token = await this.getToken();
       if (!token) throw new Error('Not signed in — please log in first');
-      return {
+      const bundle = {
         access_token: token,
         token_type: 'Bearer',
         expiry_date: Date.now() + 3600 * 1000,
       };
+      if (isLocal && window.__WAYMARK_RECORDS) {
+        window.__WAYMARK_RECORDS.push({
+          type: 'agent-token-bundle',
+          bundle,
+          createdAt: new Date().toISOString(),
+        });
+      }
+      return bundle;
     },
   },
 

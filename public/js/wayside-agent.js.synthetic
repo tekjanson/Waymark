@@ -1,0 +1,15 @@
+{
+  "workflows": [
+    {
+      "id": "share-or-switch-wayside-agent",
+      "user_intent": "Configure, share, or switch active Waymark AI agent host and P2P OAuth tunnel",
+      "trigger": "ui.wayside:open_agent_modal",
+      "steps": [
+        "validate:agent_ledger_target",
+        "external:sync_share_ledger_or_oauth_tunnel",
+        "emit:agent_host_updated"
+      ],
+      "outcome": "Active Waymark AI agent host and P2P credentials synchronized across collaborator ledgers"
+    }
+  ]
+}

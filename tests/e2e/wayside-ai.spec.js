@@ -209,6 +209,28 @@ const { setupApp } = require('../helpers/test-utils');
     await page.locator('#user-name').click();
     await page.waitForSelector('#settings-modal:not(.hidden)', { timeout: 5_000 });
     await expect(page.locator('#settings-agent-host-label')).toContainText('Shared Agent (spouse@gmail.com)');
+
+    // Verify shared agent selection persists across ensureShareLedger / findExistingShareLedger polls
+    const persistedAfterPoll = await page.evaluate(async () => {
+      const collab = await import('/js/collab.js');
+      const userData = await import('/js/user-data.js');
+      await collab.ensureShareLedger({
+        contactEmail: 'assistant@waymark.internal',
+        label: 'Waymark AI',
+      });
+      const entry = userData.getShareLedgers().find(l => l.contactEmail === 'assistant@waymark.internal');
+      return {
+        sheetId: entry?.sheetId,
+        preferred: entry?.preferred,
+        ownerEmail: entry?.ownerEmail,
+        label: entry?.label,
+        knownCount: entry?.knownAgentLedgers?.length || 0,
+      };
+    });
+    expect(persistedAfterPoll.sheetId).toBe(sharedSheetId);
+    expect(persistedAfterPoll.preferred).toBe(true);
+    expect(persistedAfterPoll.ownerEmail).toBe('spouse@gmail.com');
+    expect(persistedAfterPoll.knownCount).toBeGreaterThanOrEqual(1);
   });
 
 
