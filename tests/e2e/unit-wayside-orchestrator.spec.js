@@ -685,3 +685,105 @@ test('buildMcpConfig never pins the MCP servers to a single OAuth token', async 
   expect(cfg.mcpServers.waymark.env.GOOGLE_APPLICATION_CREDENTIALS).toBe('/creds/sa.json');
   expect(cfg.mcpServers.waymark.args[0]).toBe('/opt/waymark/mcp/waymark.mjs');
 });
+
+test('perAccountTokenPath is stable across writers and readers (no + mismatch)', async () => {
+  const { perAccountTokenPath } = await import('../../scripts/agy-agent-runner.mjs');
+  const dir = '/creds';
+  // Ordinary emails keep '@' and '.', matching legacy files.
+  expect(perAccountTokenPath('kailey.levine@gmail.com', dir))
+    .toBe(path.join(dir, 'waymark-oauth-token-kailey.levine@gmail.com.json'));
+  // '+' and other separators map deterministically — the SAME result whether a
+  // writer or a reader computes it, so a token is never "lost" to a host fallback.
+  const plus = perAccountTokenPath('john+tag@gmail.com', dir);
+  expect(plus).toBe(path.join(dir, 'waymark-oauth-token-john_tag@gmail.com.json'));
+  expect(perAccountTokenPath('John+Tag@Gmail.com', dir)).toBe(plus); // case-insensitive
+  // Non-addresses produce no path (caller must not create files for them).
+  expect(perAccountTokenPath('peer-abc123', dir)).toBe('');
+  expect(perAccountTokenPath('', dir)).toBe('');
+});
+
+test('resolveRequesterIdentity never silently falls back to the host for a shared agent', async () => {
+  const { WaysideOrchestrator } = await import('../../scripts/wayside-orchestrator.mjs');
+  const os = require('os');
+  const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'waymark-ident-'));
+  const gcloudDir = path.join(tmpHome, '.config', 'gcloud');
+  fs.mkdirSync(gcloudDir, { recursive: true });
+
+  const origHome = process.env.HOME;
+  const origTokenPath = process.env.WAYMARK_OAUTH_TOKEN_PATH;
+  process.env.HOME = tmpHome;
+  delete process.env.WAYMARK_OAUTH_TOKEN_PATH;
+  try {
+    // Host owner's default token identifies the owner.
+    fs.writeFileSync(path.join(gcloudDir, 'waymark-oauth-token.json'),
+      JSON.stringify({ access_token: 'owner', account_email: 'owner@waymark.app' }));
+
+    // --- Shared / group agent with a collaborator allow-list ---
+    const shared = new WaysideOrchestrator({ sheetId: 's', userEmail: 'owner@waymark.app', allowedUsers: ['wife@example.com'] });
+
+    // Owner messaging their own shared agent → host token (correct, not "wrong user").
+    const owner = shared.resolveRequesterIdentity('owner@waymark.app');
+    expect(owner.canActAsRequester).toBe(true);
+    expect(owner.actingAs).toBe('owner@waymark.app');
+
+    // Collaborator with NO connected token → refuse, do NOT use the host token.
+    const noToken = shared.resolveRequesterIdentity('wife@example.com');
+    expect(noToken.canActAsRequester).toBe(false);
+    expect(noToken.tokenPath).toBeNull();
+    expect(noToken.reason).toBe('no-collaborator-token');
+
+    // Collaborator WITH a matching per-account token → act as them.
+    const wifePath = path.join(gcloudDir, 'waymark-oauth-token-wife@example.com.json');
+    fs.writeFileSync(wifePath, JSON.stringify({ access_token: 'wife', account_email: 'wife@example.com' }));
+    const withToken = shared.resolveRequesterIdentity('wife@example.com');
+    expect(withToken.canActAsRequester).toBe(true);
+    expect(withToken.tokenPath).toBe(wifePath);
+    expect(withToken.actingAs).toBe('wife@example.com');
+
+    // A token whose identity does NOT match the requester → refuse (never act as the wrong account).
+    fs.writeFileSync(path.join(gcloudDir, 'waymark-oauth-token-mixed@example.com.json'),
+      JSON.stringify({ access_token: 'x', account_email: 'someone-else@example.com' }));
+    const mismatch = shared.resolveRequesterIdentity('mixed@example.com');
+    expect(mismatch.canActAsRequester).toBe(false);
+    expect(mismatch.reason).toBe('token-identity-mismatch');
+
+    // Message with no sender email on a shared agent → refuse.
+    const anon = shared.resolveRequesterIdentity('peer-xyz');
+    expect(anon.canActAsRequester).toBe(false);
+    expect(anon.reason).toBe('no-sender-email');
+
+    // --- Personal agent (no collaborators): host token is always correct ---
+    const personal = new WaysideOrchestrator({ sheetId: 'p', userEmail: 'owner@waymark.app' });
+    const solo = personal.resolveRequesterIdentity('owner@waymark.app');
+    expect(solo.canActAsRequester).toBe(true);
+    expect(solo.reason).toBe('personal-agent');
+  } finally {
+    process.env.HOME = origHome;
+    if (origTokenPath === undefined) delete process.env.WAYMARK_OAUTH_TOKEN_PATH;
+    else process.env.WAYMARK_OAUTH_TOKEN_PATH = origTokenPath;
+    fs.rmSync(tmpHome, { recursive: true, force: true });
+  }
+});
+
+test('runAgyTask refuses to run when the resolved token is not the requester', async () => {
+  const { runAgyTask } = await import('../../scripts/agy-agent-runner.mjs');
+  const os = require('os');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'waymark-guard-'));
+  const wrongToken = path.join(tmp, 'waymark-oauth-token-owner.json');
+  fs.writeFileSync(wrongToken, JSON.stringify({ access_token: 'owner', account_email: 'owner@waymark.app' }));
+  try {
+    // The resolved token acts as the owner, but we expect the collaborator.
+    const res = await runAgyTask({
+      task: 'Create a budget',
+      tokenPath: wrongToken,
+      expectedEmail: 'wife@example.com',
+    });
+    expect(res.ok).toBe(false);
+    expect(res.identityMismatch).toBe(true);
+    expect(res.error).toMatch(/Identity mismatch/i);
+    // It must refuse BEFORE doing any work (no sheet created in the wrong Drive).
+    expect(res.sheetId).toBeUndefined();
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});

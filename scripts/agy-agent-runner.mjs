@@ -25,10 +25,34 @@ function identityForToken(tokenPath) {
   try {
     if (tokenPath && existsSync(tokenPath)) {
       const tok = JSON.parse(readFileSync(tokenPath, 'utf8'));
-      return tok.account_email || tok.email || '';
+      return String(tok.account_email || tok.email || '').trim().toLowerCase();
     }
   } catch { /* ignore */ }
   return '';
+}
+
+export { identityForToken };
+
+/**
+ * Canonical on-disk path for a collaborator's per-account OAuth token.
+ *
+ * THE single source of truth for this filename. Every writer and reader of a
+ * per-account token MUST route through here — a divergent normalization scheme
+ * is exactly what caused the agent to "lose" a requester's token and silently
+ * fall back to the host account, creating Waymarks in the wrong Drive.
+ *
+ * Normalization: lowercase, then replace any char outside [a-z0-9@._-] with '_'
+ * (so '@' and '.' are preserved — matching legacy files for ordinary emails —
+ * while '+' and other separators map deterministically on both sides).
+ * @param {string} email — the requester's email address
+ * @param {string} gcloudDir — directory holding the token files
+ * @returns {string} absolute token path, or '' when `email` is not an address
+ */
+export function perAccountTokenPath(email, gcloudDir) {
+  const clean = String(email || '').trim().toLowerCase();
+  if (!clean.includes('@')) return '';
+  const safe = clean.replace(/[^a-z0-9@._-]/g, '_');
+  return path.join(gcloudDir, `waymark-oauth-token-${safe}.json`);
 }
 
 /** Persist a full diagnostic record of one agy task (success or failure). */
@@ -373,6 +397,7 @@ export async function runAgyTask({
   context = '',
   shareWith = [],
   tokenPath = null,
+  expectedEmail = '',
   model = DEFAULT_MODEL,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   cwd = ROOT,
@@ -402,6 +427,32 @@ export async function runAgyTask({
   // otherwise Waymarks are created in the wrong Drive. Surfaced in diagnostics.
   const actingAs = identityForToken(resolvedOAuth);
   process.stderr.write(`[agy] task start — acting as: ${actingAs || 'UNKNOWN'} | token: ${resolvedOAuth || 'none'} | template: ${templateKey || 'auto'}\n`);
+
+  // Final safety net: never act under the wrong Google account. When the caller
+  // tells us who the requester is (expectedEmail), the resolved token's identity
+  // MUST match. A mismatch means we'd silently create/modify Waymarks in someone
+  // else's Drive — refuse rather than do that.
+  const wantEmail = String(expectedEmail || '').trim().toLowerCase();
+  if (wantEmail && actingAs && actingAs !== wantEmail) {
+    const durationMs = Date.now() - start;
+    const errorMsg = `Identity mismatch: resolved OAuth token acts as '${actingAs}' but the requester is '${wantEmail}'. Refusing to run so Waymarks never land in the wrong account.`;
+    const logFile = writeTaskLog({
+      outcome: 'IDENTITY_MISMATCH', actingAs, tokenPath: resolvedOAuth, model,
+      durationMs, error: errorMsg, prompt,
+    });
+    process.stderr.write(`[agy] ❌ ${errorMsg} — log: ${logFile || 'n/a'}\n`);
+    return { ok: false, output: '', error: errorMsg, actingAs, durationMs, logFile, identityMismatch: true };
+  }
+  if (wantEmail && !actingAs) {
+    const durationMs = Date.now() - start;
+    const errorMsg = `Cannot act as '${wantEmail}': no usable OAuth token was resolved. Refusing to fall back to another account.`;
+    const logFile = writeTaskLog({
+      outcome: 'NO_REQUESTER_TOKEN', actingAs: '', tokenPath: resolvedOAuth, model,
+      durationMs, error: errorMsg, prompt,
+    });
+    process.stderr.write(`[agy] ❌ ${errorMsg} — log: ${logFile || 'n/a'}\n`);
+    return { ok: false, output: '', error: errorMsg, actingAs: '', durationMs, logFile, identityMismatch: true };
+  }
 
   // On Windows when agy resolves to a .cmd/.bat shim, invoke via powershell.exe with shell: false
   // and pass arguments via environment variables so untrusted prompts can never inject cmd.exe metacharacters.

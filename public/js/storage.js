@@ -127,6 +127,24 @@ function setTheme(theme) {
   set('theme', theme);
 }
 
+/* --- Custom theme (Appearance builder) --- */
+
+/**
+ * Get the saved custom theme object (null if never set).
+ * @returns {Object|null}
+ */
+function getCustomTheme() {
+  return get('custom_theme') || null;
+}
+
+/**
+ * Save the custom theme object (localStorage mirror for zero-flash load).
+ * @param {Object} theme
+ */
+function setCustomTheme(theme) {
+  set('custom_theme', theme || null);
+}
+
 /* --- Recent Sheets --- */
 function getRecentSheets() {
   return get('recent_sheets') || [];
@@ -893,6 +911,8 @@ export {
   setTutorialStep,
   getTheme,
   setTheme,
+  getCustomTheme,
+  setCustomTheme,
   getRecentSheets,
   setRecentSheets,
   getSearchHistory,

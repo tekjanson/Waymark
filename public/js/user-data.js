@@ -52,6 +52,7 @@ function defaultUserData() {
       mqttBridge: false,          // MQTT debug bridge enabled
       mqttBrokerUrl: '',          // custom MQTT broker URL (empty = auto-detect)
       homeTemplateMode: 1,        // selected Home layout (stored 1–50 legacy; resolved to 12 curated layouts)
+      customTheme: null,          // Appearance theme-builder object (null = use layout preset palette)
     },
 
     /* ── Tutorial ── */
@@ -684,6 +685,26 @@ async function setTheme(theme) {
   await save({ preferences: prefs });
 }
 
+/* ---------- Custom Theme (Appearance builder) ---------- */
+
+/**
+ * Get the user's custom theme object, or null when none is set.
+ * @returns {Object|null}
+ */
+function getCustomTheme() {
+  return _userData?.preferences?.customTheme || null;
+}
+
+/**
+ * Persist the custom theme object (Drive + localStorage mirror).
+ * @param {Object|null} theme
+ */
+async function setCustomTheme(theme) {
+  const prefs = { ...(_userData?.preferences || {}), customTheme: theme || null };
+  try { storage.setCustomTheme?.(theme || null); } catch { /* mirror is best-effort */ }
+  await save({ preferences: prefs });
+}
+
 /* ---------- Import Folder ---------- */
 
 /**
@@ -1147,6 +1168,7 @@ export {
   getSignalingSheetId,
   getSortOrder,
   getTheme,
+  getCustomTheme,
   getTutorialCompleted,
   getTutorialStep,
   init,
@@ -1179,6 +1201,7 @@ export {
   setSidebarOpen,
   setSortOrder,
   setTheme,
+  setCustomTheme,
   setTutorialCompleted,
   setTutorialStep,
 };

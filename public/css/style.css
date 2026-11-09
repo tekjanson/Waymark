@@ -6,6 +6,9 @@
 /* Core: variables, reset, layout, shared components */
 @import url('./base.css');
 
+/* Platform-wide theming from the Profile palette (html[data-wm-palette]) */
+@import url('./palettes.css');
+
 /* Unified Wayboard home — 50 selectable layout architectures */
 @import url('./home-modes.css');
 

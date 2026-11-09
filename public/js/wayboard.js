@@ -93,13 +93,30 @@ const sheetPreviewCache = new Map();
 /* ---------- Mode application ---------- */
 
 /**
- * Apply a home layout architecture to the Wayboard root.
+ * Apply a home layout architecture to the Wayboard root AND (by default) theme
+ * the whole platform with that layout's palette.
+ *
+ * The layout structure (grid/columns) is scoped to #wayboard-root via the
+ * mode-N class. The palette is lifted app-wide by stamping data-wm-palette on
+ * the html element — css/palettes.css maps it onto every --color-* token.
+ *
+ * Pass { theme: false } to update ONLY the Wayboard structure and leave the
+ * global palette untouched — used when a custom Appearance theme is active and
+ * must not be overwritten by a layout change.
  * @param {number} mode stored mode (1–50 legacy or 1–12 current)
+ * @param {{ theme?: boolean }} [opts]
  */
-function applyHomeMode(mode) {
+function applyHomeMode(mode, opts = {}) {
+  const n = resolveLayout(mode);
+  const current = document.documentElement.getAttribute('data-wm-palette');
+  // Respect an active custom Appearance theme — a layout change must never
+  // overwrite it with a preset palette. opts.theme === true forces the palette.
+  const applyPalette = opts.theme === true || (opts.theme !== false && current !== 'custom');
+  if (applyPalette) {
+    document.documentElement.setAttribute('data-wm-palette', String(n));
+  }
   const root = document.getElementById('wayboard-root');
   if (!root) return;
-  const n = resolveLayout(mode);
   const expanded = root.classList.contains('wayboard-expanded');
   root.className = `wayboard-root mode-${n}`;
   if (expanded) root.classList.add('wayboard-expanded');
