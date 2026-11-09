@@ -1,0 +1,124 @@
+/* ============================================================
+   palettes.css — Platform-wide theming from the Profile palette.
+
+   The Profile "Home layout" selector (1–12) carries a colour palette.
+   home-modes.css applies that palette to the Wayboard. This file lifts the
+   SAME palette onto the whole application: the html element carries
+   data-wm-palette="N", and every app surface, menu, modal, and template view
+   that uses the --color-* design tokens adopts the chosen theme.
+
+   Scope note: these rules map the raw palette (--wm-*) onto the app's semantic
+   --color-* tokens. Because html[data-wm-palette="N"] (specificity 0,1,1)
+   outranks :root and [data-theme] (0,1,0), the active palette governs the whole
+   platform. Semantic status hues (success/error/warning and the tint-* set) are
+   still provided per light/dark nature so Pass/Fail-style cues stay correct.
+   ============================================================ */
+
+/* ---------- Raw palette per mode (mirrors css/home-modes.css) ----------
+   Default = mode 1 (Command Center, dark). Dark palettes that don't set text/
+   muted inherit these dark defaults — exactly as they do on #wayboard-root. */
+html[data-wm-palette] {
+  --wm-bg: #0d1117;
+  --wm-panel: #161b22;
+  --wm-card: #21262d;
+  --wm-border: #30363d;
+  --wm-accent: #3b82f6;
+  --wm-green: #10b981;
+  --wm-text: #f0f6fc;
+  --wm-muted: #8b949e;
+  --wm-radius: 12px;
+}
+html[data-wm-palette="2"]  { --wm-bg:#f5f6fb; --wm-panel:#ffffff; --wm-card:#ffffff; --wm-border:#e5e8f2; --wm-text:#1d2433; --wm-muted:#64708a; --wm-accent:#6366f1; --wm-radius:18px; }
+html[data-wm-palette="3"]  { --wm-bg:#f7f6f3; --wm-panel:#ffffff; --wm-card:#ffffff; --wm-border:#e7e3da; --wm-text:#1f2a28; --wm-muted:#6c7b77; --wm-accent:#0d9488; --wm-radius:14px; }
+html[data-wm-palette="4"]  { --wm-bg:#1a1016; --wm-panel:#241720; --wm-card:#2d1d28; --wm-border:#3f2a38; --wm-accent:#ec4899; --wm-green:#34d399; --wm-text:#fdf2f8; --wm-muted:#c69bb3; }
+html[data-wm-palette="5"]  { --wm-bg:#0b0f14; --wm-panel:#131922; --wm-card:#1a222d; --wm-border:#2a3545; --wm-accent:#38bdf8; }
+html[data-wm-palette="6"]  { --wm-bg:#0c0d15; --wm-panel:#13141f; --wm-card:#191b29; --wm-border:#282a3d; --wm-accent:#818cf8; }
+html[data-wm-palette="7"]  { --wm-bg:#efe9dd; --wm-panel:#fbf7ef; --wm-card:#fffdf8; --wm-border:#e0d6c4; --wm-text:#2b2418; --wm-muted:#7a6f59; --wm-accent:#c2410c; --wm-radius:10px; }
+html[data-wm-palette="8"]  { --wm-bg:#05080a; --wm-panel:#0a1014; --wm-card:#0e171c; --wm-border:#163038; --wm-accent:#22d3ee; --wm-green:#22d3ee; --wm-text:#dbf5fb; --wm-muted:#5f93a0; --wm-radius:4px; }
+html[data-wm-palette="9"]  { --wm-bg:#0d0b12; --wm-panel:#15121d; --wm-card:#1c1827; --wm-border:#2d2740; --wm-accent:#a855f7; --wm-radius:16px; }
+html[data-wm-palette="10"] { --wm-bg:#0b1020; --wm-panel:#111833; --wm-card:#16203f; --wm-border:#243357; --wm-accent:#60a5fa; --wm-radius:14px; }
+html[data-wm-palette="11"] { --wm-bg:#faf7f0; --wm-panel:#fffdf8; --wm-card:#fffdf8; --wm-border:#e6ddc9; --wm-text:#211c13; --wm-muted:#6f6552; --wm-accent:#b45309; --wm-radius:6px; }
+html[data-wm-palette="12"] { --wm-bg:#060708; --wm-panel:#0c0e10; --wm-card:#111417; --wm-border:#20262c; --wm-accent:#f59e0b; --wm-green:#22c55e; --wm-text:#e8edf2; --wm-muted:#7a8894; --wm-radius:3px; }
+
+/* ---------- Global bridge: map the raw palette onto the app's design tokens ----------
+   Applies to every palette. Descendant elements that reference --color-* (menus,
+   sidebar, top bar, modals, cards, and all template views) inherit the palette. */
+html[data-wm-palette] {
+  --color-bg: var(--wm-bg);
+  --color-surface: var(--wm-card);
+  --color-surface-hover: var(--wm-panel);
+  --color-hover: var(--wm-panel);
+  --color-text: var(--wm-text);
+  --color-heading: var(--wm-text);
+  --color-text-secondary: var(--wm-muted);
+  --color-text-muted: var(--wm-muted);
+  --color-muted: var(--wm-muted);
+  --color-label: var(--wm-muted);
+  --color-border: var(--wm-border);
+  --color-primary: var(--wm-accent);
+  --color-primary-dark: var(--wm-accent);
+  --color-accent: var(--wm-accent);
+  --color-success: var(--wm-green, #16a34a);
+  --radius: var(--wm-radius, 8px);
+
+  /* Short-form aliases referenced directly by some templates. */
+  --accent: var(--wm-accent);
+  --text: var(--wm-text);
+  --text-muted: var(--wm-muted);
+  --surface: var(--wm-card);
+  --border: var(--wm-border);
+}
+
+/* ---------- Dark palettes: semantic tints, shadows, color-scheme ---------- */
+html[data-wm-palette="1"],
+html[data-wm-palette="4"],
+html[data-wm-palette="5"],
+html[data-wm-palette="6"],
+html[data-wm-palette="8"],
+html[data-wm-palette="9"],
+html[data-wm-palette="10"],
+html[data-wm-palette="12"] {
+  color-scheme: dark;
+  --color-primary-light: color-mix(in srgb, var(--wm-accent) 22%, transparent);
+  --color-success-light: rgba(74, 222, 128, 0.18);
+  --color-error: #ef4444;
+  --color-error-light: rgba(248, 113, 113, 0.18);
+  --color-warning: #fbbf24;
+  --color-shared: #a78bfa;
+  --color-shared-light: rgba(167, 139, 250, 0.18);
+  --shadow: 0 1px 3px rgba(0, 0, 0, .3), 0 1px 2px rgba(0, 0, 0, .2);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, .4);
+  --tint-green-bg: rgba(74, 222, 128, 0.16);  --tint-green-text: #4ade80;
+  --tint-red-bg: rgba(248, 113, 113, 0.16);   --tint-red-text: #fca5a5;
+  --tint-amber-bg: rgba(251, 191, 36, 0.14);  --tint-amber-text: #fcd34d;
+  --tint-blue-bg: rgba(96, 165, 250, 0.16);   --tint-blue-text: #93c5fd;
+  --tint-purple-bg: rgba(167, 139, 250, 0.16); --tint-purple-text: #c4b5fd;
+  --tint-indigo-bg: rgba(129, 140, 248, 0.14); --tint-indigo-text: #a5b4fc;
+  --tint-gray-bg: rgba(148, 163, 184, 0.1);   --tint-gray-text: #94a3b8;
+  --tint-teal-bg: rgba(94, 234, 212, 0.14);   --tint-teal-text: #5eead4;
+}
+
+/* ---------- Light palettes: semantic tints, shadows, color-scheme ---------- */
+html[data-wm-palette="2"],
+html[data-wm-palette="3"],
+html[data-wm-palette="7"],
+html[data-wm-palette="11"] {
+  color-scheme: light;
+  --color-primary-light: color-mix(in srgb, var(--wm-accent) 14%, #ffffff);
+  --color-success-light: #dcfce7;
+  --color-error: #dc2626;
+  --color-error-light: #fee2e2;
+  --color-warning: #f59e0b;
+  --color-shared: #8b5cf6;
+  --color-shared-light: #ede9fe;
+  --shadow: 0 1px 3px rgba(0, 0, 0, .1), 0 1px 2px rgba(0, 0, 0, .06);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, .1);
+  --tint-green-bg: #dcfce7;  --tint-green-text: #15803d;
+  --tint-red-bg: #fee2e2;    --tint-red-text: #b91c1c;
+  --tint-amber-bg: #fef3c7;  --tint-amber-text: #92400e;
+  --tint-blue-bg: #dbeafe;   --tint-blue-text: #1d4ed8;
+  --tint-purple-bg: #ede9fe; --tint-purple-text: #6d28d9;
+  --tint-indigo-bg: #eef2ff; --tint-indigo-text: #4338ca;
+  --tint-gray-bg: #f1f5f9;   --tint-gray-text: #64748b;
+  --tint-teal-bg: #ccfbf1;   --tint-teal-text: #115e59;
+}

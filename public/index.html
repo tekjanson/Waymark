@@ -9,6 +9,12 @@
       try { t = JSON.parse(localStorage.getItem('waymark_theme')) || 'light'; } catch(e) {}
       if (t === 'system') t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
       document.documentElement.setAttribute('data-theme', t);
+      // Prevent flash of wrong palette — stamp the saved Profile palette (1–12)
+      // so the whole app is themed before first paint. Legacy modes (13–50) are
+      // resolved to a curated palette by wayboard.js right after boot.
+      var m = 1;
+      try { m = parseInt(JSON.parse(localStorage.getItem('waymark_home_template_mode')), 10) || 1; } catch(e) {}
+      document.documentElement.setAttribute('data-wm-palette', (m >= 1 && m <= 12) ? String(m) : '1');
     })();
   </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">

@@ -19,7 +19,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 import { SheetWebRtcPeer } from '../mcp/sheet-webrtc-peer.mjs';
-import { runAgyTask, extractSpreadsheetId } from './agy-agent-runner.mjs';
+import { runAgyTask, extractSpreadsheetId, perAccountTokenPath, identityForToken } from './agy-agent-runner.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -743,14 +743,17 @@ export class WaysideOrchestrator {
         updated_at: new Date().toISOString(),
       };
 
-      const senderClean = String(opts.sender || '').trim().toLowerCase().replace(/[^a-z0-9@._-]/g, '');
+      // Keep the REAL requester email (lowercased) — it is the identity we later
+      // verify the agent is acting as, and it is stored as account_email so a
+      // mismatch can never be masked by a mangled address.
+      const senderEmail = String(opts.sender || '').trim().toLowerCase();
       const existingHost = String(existing.account_email || opts.hostEmail || '').trim().toLowerCase();
       const isCollaboratorPush = Boolean(
-        senderClean &&
+        senderEmail &&
         !opts.tokenPath &&
         !process.env.WAYMARK_OAUTH_TOKEN_PATH &&
         existsSync(oauthPath) &&
-        ((existingHost && existingHost !== senderClean) || (!refreshToken && existing.refresh_token))
+        ((existingHost && existingHost !== senderEmail) || (!refreshToken && existing.refresh_token))
       );
 
       if (!opts.dryRun) {
@@ -764,8 +767,10 @@ export class WaysideOrchestrator {
           renameSync(tmpPath, oauthPath);
         }
 
-        if (senderClean && !opts.tokenPath && !process.env.WAYMARK_OAUTH_TOKEN_PATH) {
-          const senderPath = path.join(path.dirname(oauthPath), `waymark-oauth-token-${senderClean}.json`);
+        if (senderEmail.includes('@') && !opts.tokenPath && !process.env.WAYMARK_OAUTH_TOKEN_PATH) {
+          // Canonical per-account path — the SAME helper every reader uses, so a
+          // collaborator's token is always found again (no silent host fallback).
+          const senderPath = perAccountTokenPath(senderEmail, path.dirname(oauthPath));
           const senderTmp = `${senderPath}.${process.pid}.tmp`;
           // Preserve any client credentials already on file for this account so a
           // refresh-only push never drops them.
@@ -786,7 +791,7 @@ export class WaysideOrchestrator {
             ...(parsed.scope ? { scope: parsed.scope } : (priorSender.scope ? { scope: priorSender.scope } : {})),
             token_type: parsed.token_type || 'Bearer',
             expiry_date: expiryMs,
-            account_email: senderClean,
+            account_email: senderEmail,
             updated_via: 'wayside-p2p-tunnel',
             updated_at: new Date().toISOString(),
           };
@@ -795,7 +800,7 @@ export class WaysideOrchestrator {
             try { chmodSync(senderTmp, 0o600); } catch {}
           }
           renameSync(senderTmp, senderPath);
-          console.log(`[WaysideOrchestrator] 🔑 Saved per-account OAuth token for ${senderClean} (${senderBundle.refresh_token ? 'durable: refresh_token' : 'access-only'}) -> ${senderPath}`);
+          console.log(`[WaysideOrchestrator] 🔑 Saved per-account OAuth token for ${senderEmail} (${senderBundle.refresh_token ? 'durable: refresh_token' : 'access-only'}) -> ${senderPath}`);
         }
       }
 
@@ -1245,6 +1250,66 @@ export class WaysideOrchestrator {
       });
   }
 
+  /**
+   * Decide which Google identity a request must run as — and whether we can run
+   * it at all without landing files in the wrong Drive.
+   *
+   * Rules (bulletproof over permissive):
+   * - Personal agent (no collaborators): the owner is the only user, so the
+   *   default host token is always correct.
+   * - The owner messaging their own shared agent: default host token.
+   * - A collaborator: require their durable per-account token AND verify the
+   *   token actually represents them. No token / wrong token / no email → we
+   *   refuse rather than silently fall back to the host.
+   * @param {string} senderKey — lowercased requester key (ideally an email)
+   * @returns {{ tokenPath: string|null, actingAs: string, canActAsRequester: boolean, reason: string }}
+   */
+  resolveRequesterIdentity(senderKey) {
+    const gcloudDir = path.join(os.homedir(), '.config', 'gcloud');
+    const defaultOAuthPath = process.env.WAYMARK_OAUTH_TOKEN_PATH
+      || path.join(gcloudDir, 'waymark-oauth-token.json');
+    const hostEmail = (identityForToken(defaultOAuthPath) || this.userEmail || '').trim().toLowerCase();
+    const isPersonalAgent = !this.isGroup && (!this.allowedUsers || this.allowedUsers.length === 0);
+    const key = String(senderKey || '').trim().toLowerCase();
+
+    if (isPersonalAgent) {
+      return { tokenPath: existsSync(defaultOAuthPath) ? defaultOAuthPath : null, actingAs: hostEmail, canActAsRequester: existsSync(defaultOAuthPath), reason: 'personal-agent' };
+    }
+
+    if (key && hostEmail && key === hostEmail) {
+      return { tokenPath: existsSync(defaultOAuthPath) ? defaultOAuthPath : null, actingAs: hostEmail, canActAsRequester: existsSync(defaultOAuthPath), reason: 'host-owner' };
+    }
+
+    if (key.includes('@')) {
+      const perPath = perAccountTokenPath(key, gcloudDir);
+      if (perPath && existsSync(perPath)) {
+        const tokenEmail = identityForToken(perPath);
+        if (tokenEmail && tokenEmail === key) {
+          return { tokenPath: perPath, actingAs: tokenEmail, canActAsRequester: true, reason: 'collaborator-token' };
+        }
+        return { tokenPath: null, actingAs: '', canActAsRequester: false, reason: tokenEmail ? 'token-identity-mismatch' : 'token-unreadable' };
+      }
+      return { tokenPath: null, actingAs: '', canActAsRequester: false, reason: 'no-collaborator-token' };
+    }
+
+    return { tokenPath: null, actingAs: '', canActAsRequester: false, reason: 'no-sender-email' };
+  }
+
+  /**
+   * Friendly, actionable reply when we won't act as the requester. We never
+   * create in the wrong Drive — instead we tell them exactly how to connect.
+   * @param {string} friendlyName
+   * @param {string} reason — from resolveRequesterIdentity
+   * @returns {string}
+   */
+  static buildConnectAccountReply(friendlyName, reason) {
+    const who = friendlyName || 'there';
+    if (reason === 'no-sender-email') {
+      return `Hi ${who}! I couldn't tell which account this request is coming from, so I won't risk creating it in the wrong place. Please send again from the Waymark app while you're signed in, and I'll build it right in your Drive.`;
+    }
+    return `Hi ${who}! To build this **in your own Google Drive** — so you fully own it and it isn't buried in someone else's account — I need you to connect your Google account to me first. Open **Settings → Waymark AI Agent** in Waymark and connect your account (it's a one-time, one-tap step). Then resend your request and I'll create everything under your account. 🔐`;
+  }
+
   async processMessage({ text, sender, displayName, messageId, remotePeerId, fromWebRtc, threadId = 'default', threadTitle = '' }) {
     let activeThreadId = String(threadId || 'default').trim() || 'default';
     let activeThreadTitle = String(threadTitle || '').trim();
@@ -1345,54 +1410,65 @@ export class WaysideOrchestrator {
       }
 
       console.log(`[WaysideOrchestrator] 🚀 Dispatching to AGY (template: ${effectiveTemplateKey || 'auto'}, sheet: ${targetSheetId || 'none'})...`);
-      let activeTokenPath = null;
-      try {
-        const gcloudDir = path.join(os.homedir(), '.config', 'gcloud');
-        const perAccountPath = senderKey.includes('@')
-          ? path.join(gcloudDir, `waymark-oauth-token-${senderKey.replace(/[^a-z0-9.@_-]/gi, '_')}.json`)
-          : '';
-        activeTokenPath = (perAccountPath && fs.existsSync(perAccountPath))
-          ? perAccountPath
-          : (process.env.WAYMARK_OAUTH_TOKEN_PATH || path.join(gcloudDir, 'waymark-oauth-token.json'));
-        fs.writeFileSync(
-          path.join(gcloudDir, 'waymark-active-requester.json'),
-          JSON.stringify({
-            sender: senderKey,
-            tokenPath: activeTokenPath,
-            updatedAt: Date.now(),
-          }, null, 2) + '\n',
-          { mode: 0o600 }
-        );
-      } catch {}
 
-      // Make the requester identity explicit in the logs — the #1 thing to
-      // verify when a shared agent misbehaves ("who does it think is asking?").
-      console.log(`[WaysideOrchestrator] 👤 Dispatching as requester='${senderKey}' | tokenPath='${activeTokenPath}'`);
-      if (!String(senderKey).includes('@')) {
-        console.warn(`[WaysideOrchestrator] ⚠️ Requester '${senderKey}' is not an email — the incoming message lacked a sender email, so the agent cannot reliably act as them and may fall back to the host account.`);
-      }
+      // Resolve WHICH Google account this request must run as. For a shared /
+      // group agent this MUST be the specific requester — never a silent fall
+      // back to the host, which is exactly how Waymarks ended up created in the
+      // wrong Drive and then merely shared back.
+      const identity = this.resolveRequesterIdentity(senderKey);
+      console.log(`[WaysideOrchestrator] 👤 Requester='${senderKey}' → actingAs='${identity.actingAs || '(none)'}' | canAct=${identity.canActAsRequester} | ${identity.reason} | token='${identity.tokenPath || 'none'}'`);
 
-      const agyResult = await runAgyTask({
-        task: text,
-        templateKey: effectiveTemplateKey,
-        sheetId: targetSheetId,
-        context: contextLines.join('\n'),
-        shareWith: shareTargets,
-        tokenPath: activeTokenPath,
-      });
-
-      if (agyResult.ok) {
-        replyText = agyResult.output;
-        createdSheetId = agyResult.sheetId;
-        createdDocId = agyResult.docId;
-        shouldLinkSheet = Boolean(createdSheetId && !this.knownSharedDocIds.has(createdSheetId));
-        shouldLinkDoc = Boolean(createdDocId && !this.knownSharedDocIds.has(createdDocId));
-        createdSheetTitle = agyResult.sheetTitle || (classification.templateName ? `${classification.templateName} Plan` : 'Shared Waymark');
-        createdDocTitle = agyResult.docTitle || 'Waymark Document';
+      if (!identity.canActAsRequester) {
+        // Refuse to create/modify under the wrong account. Tell the requester
+        // exactly how to connect so their next request lands in THEIR Drive.
+        console.warn(`[WaysideOrchestrator] ⛔ Not acting for '${senderKey}' (${identity.reason}) — refusing host fallback so nothing is created in the wrong account.`);
+        replyText = WaysideOrchestrator.buildConnectAccountReply(friendlyName, identity.reason);
       } else {
-        const who = agyResult.actingAs ? ` (acting as ${agyResult.actingAs})` : '';
-        console.error(`[WaysideOrchestrator] ❌ Task failed${who}: ${agyResult.error}${agyResult.logFile ? ` | log: ${agyResult.logFile}` : ''}`);
-        replyText = `⚠️ I couldn't finish that request${who}.\n\n${agyResult.error}\n\nI've logged the full details for debugging. Please try again or rephrase.`;
+        // Record the active requester so every MCP child is deterministic, then
+        // dispatch with an explicit identity assertion (expectedEmail) as a final
+        // safety net inside the runner.
+        try {
+          const gcloudDir = path.join(os.homedir(), '.config', 'gcloud');
+          mkdirSync(gcloudDir, { recursive: true });
+          writeFileSync(
+            path.join(gcloudDir, 'waymark-active-requester.json'),
+            JSON.stringify({
+              sender: identity.actingAs || senderKey,
+              tokenPath: identity.tokenPath,
+              updatedAt: Date.now(),
+            }, null, 2) + '\n',
+            { mode: 0o600 }
+          );
+        } catch (err) {
+          console.warn(`[WaysideOrchestrator] ⚠️ Could not persist active-requester pointer: ${err.message}`);
+        }
+
+        const agyResult = await runAgyTask({
+          task: text,
+          templateKey: effectiveTemplateKey,
+          sheetId: targetSheetId,
+          context: contextLines.join('\n'),
+          shareWith: shareTargets,
+          tokenPath: identity.tokenPath,
+          expectedEmail: identity.actingAs,
+        });
+
+        if (agyResult.ok) {
+          replyText = agyResult.output;
+          createdSheetId = agyResult.sheetId;
+          createdDocId = agyResult.docId;
+          shouldLinkSheet = Boolean(createdSheetId && !this.knownSharedDocIds.has(createdSheetId));
+          shouldLinkDoc = Boolean(createdDocId && !this.knownSharedDocIds.has(createdDocId));
+          createdSheetTitle = agyResult.sheetTitle || (classification.templateName ? `${classification.templateName} Plan` : 'Shared Waymark');
+          createdDocTitle = agyResult.docTitle || 'Waymark Document';
+        } else if (agyResult.identityMismatch) {
+          console.error(`[WaysideOrchestrator] ❌ Identity guard tripped for '${senderKey}': ${agyResult.error}`);
+          replyText = WaysideOrchestrator.buildConnectAccountReply(friendlyName, 'identity-mismatch');
+        } else {
+          const who = agyResult.actingAs ? ` (acting as ${agyResult.actingAs})` : '';
+          console.error(`[WaysideOrchestrator] ❌ Task failed${who}: ${agyResult.error}${agyResult.logFile ? ` | log: ${agyResult.logFile}` : ''}`);
+          replyText = `⚠️ I couldn't finish that request${who}.\n\n${agyResult.error}\n\nI've logged the full details for debugging. Please try again or rephrase.`;
+        }
       }
     }
 
@@ -1439,11 +1515,11 @@ export class WaysideOrchestrator {
     if (!sheetId || !cleanTarget || !cleanTarget.includes('@')) return sheetId;
     try {
       const gcloudDir = path.join(os.homedir(), '.config', 'gcloud');
-      const perAccountPath = path.join(gcloudDir, `waymark-oauth-token-${cleanTarget.replace(/[^a-z0-9.@_-]/gi, '_')}.json`);
+      const perAccountPath = perAccountTokenPath(cleanTarget, gcloudDir);
       let userAccessToken = null;
-      if (fs.existsSync(perAccountPath)) {
+      if (perAccountPath && existsSync(perAccountPath)) {
         try {
-          const tok = JSON.parse(fs.readFileSync(perAccountPath, 'utf8'));
+          const tok = JSON.parse(readFileSync(perAccountPath, 'utf8'));
           if (tok?.access_token && (!tok.expiry_date || Date.now() < Number(tok.expiry_date) - 30_000)) {
             userAccessToken = tok.access_token;
           }
