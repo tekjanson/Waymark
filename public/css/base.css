@@ -1889,26 +1889,188 @@ html.waymark-android #search-input {
 }
 .modal-footer-actions { display: flex; gap: 8px; }
 
-/* ---------- Settings Modal ---------- */
+/* ---------- Settings Modal (tabbed: sticky nav + grouped sections) ---------- */
 .settings-modal {
-  width: min(840px, calc(100vw - 48px));
-  max-width: 840px;
-  max-height: min(90vh, 860px);
+  width: min(960px, calc(100vw - 32px));
+  max-width: 960px;
+  max-height: min(92vh, 900px);
 }
 .settings-body {
   flex: 1 1 auto;
   overflow-y: auto;
   min-height: 0;
   -webkit-overflow-scrolling: touch;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  padding: 14px 24px 18px;
-  align-content: start;
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  padding: 0;
 }
 
+/* Sticky section nav */
+.settings-nav {
+  position: sticky;
+  top: 0;
+  align-self: stretch;
+  flex: 0 0 186px;
+  width: 186px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 16px 10px;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  background: none;
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--transition), color var(--transition);
+}
+.settings-nav-item:hover { background: var(--color-surface-hover); color: var(--color-text); }
+.settings-nav-item.is-active { background: var(--color-primary-light); color: var(--color-primary); }
+.settings-nav-icon { font-size: 1rem; line-height: 1; flex-shrink: 0; }
+
+/* Scrollable grouped sections */
+.settings-sections {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 18px 22px 28px;
+}
+.settings-group {
+  scroll-margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.settings-group-title {
+  font-size: 1.08rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--color-heading);
+}
+
+/* Theme builder */
+.settings-sublabel {
+  display: block;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+  margin-bottom: 7px;
+}
+.theme-builder-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 8px;
+  transition: opacity var(--transition);
+}
+.theme-builder.theme-disabled .theme-builder-body {
+  opacity: 0.4;
+  pointer-events: none;
+  filter: grayscale(0.3);
+}
+.theme-presets { display: flex; flex-wrap: wrap; gap: 8px; }
+.theme-preset {
+  width: 34px; height: 34px;
+  border-radius: 9px;
+  border: 2px solid var(--color-border);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 120ms ease, border-color var(--transition), box-shadow var(--transition);
+}
+.theme-preset:hover { transform: translateY(-2px); }
+.theme-preset.is-active {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-light);
+}
+.theme-swatches {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+}
+.theme-swatch { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.theme-swatch-name { font-size: 0.85rem; font-weight: 600; flex: 1; min-width: 0; }
+.theme-swatch input[type="color"] {
+  width: 36px; height: 30px;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  background: none;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+.theme-swatch-hex {
+  width: 88px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  text-transform: lowercase;
+}
+.settings-segmented {
+  display: inline-flex;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.settings-seg-btn {
+  padding: 7px 16px;
+  border: none;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+.settings-seg-btn.is-active { background: var(--color-primary); color: #fff; }
+.settings-range { width: 170px; max-width: 55%; accent-color: var(--color-primary); cursor: pointer; }
+.settings-value { font-weight: 600; color: var(--color-text-secondary); font-size: 0.82rem; }
+.settings-row-actions { justify-content: flex-end; border-bottom: none; }
+.theme-preview { margin-top: 2px; }
+.theme-preview-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 13px 15px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow);
+}
+.theme-preview-head { display: flex; align-items: center; gap: 9px; margin-bottom: 9px; }
+.theme-preview-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--color-primary); flex-shrink: 0; }
+.theme-preview-title { font-weight: 700; flex: 1; }
+.theme-preview-btn {
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  padding: 5px 13px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.theme-preview-text { font-size: 0.9rem; color: var(--color-text); }
+.theme-preview-muted { font-size: 0.82rem; color: var(--color-text-muted); margin-top: 3px; }
+.theme-preview-link { color: var(--color-primary); font-weight: 600; }
+
 .settings-profile {
-  grid-column: 1 / -1;
   display: flex; align-items: center; gap: 16px;
   padding: 12px 18px;
   background: var(--color-bg);
@@ -2506,10 +2668,28 @@ html.waymark-android #search-input {
     max-height: calc(100dvh - 24px);
   }
   .settings-body {
-    grid-template-columns: 1fr;
-    gap: 12px;
-    padding: 14px 16px 18px;
+    flex-direction: column;
+    padding: 0;
   }
+  .settings-nav {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    flex: 0 0 auto;
+    width: 100%;
+    flex-direction: row;
+    gap: 4px;
+    overflow-x: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+    padding: 8px 10px;
+  }
+  .settings-nav-item { width: auto; white-space: nowrap; padding: 8px 12px; }
+  .settings-sections {
+    gap: 18px;
+    padding: 14px 16px 20px;
+  }
+  .theme-swatches { grid-template-columns: 1fr; }
   .settings-profile {
     padding: 14px 16px;
   }

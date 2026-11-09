@@ -9,12 +9,38 @@
       try { t = JSON.parse(localStorage.getItem('waymark_theme')) || 'light'; } catch(e) {}
       if (t === 'system') t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
       document.documentElement.setAttribute('data-theme', t);
-      // Prevent flash of wrong palette — stamp the saved Profile palette (1–12)
-      // so the whole app is themed before first paint. Legacy modes (13–50) are
-      // resolved to a curated palette by wayboard.js right after boot.
-      var m = 1;
-      try { m = parseInt(JSON.parse(localStorage.getItem('waymark_home_template_mode')), 10) || 1; } catch(e) {}
-      document.documentElement.setAttribute('data-wm-palette', (m >= 1 && m <= 12) ? String(m) : '1');
+      // Prevent flash of wrong palette/theme — apply the saved Appearance theme
+      // before first paint. A custom theme wins; otherwise the layout preset.
+      try {
+        var ct = JSON.parse(localStorage.getItem('waymark_custom_theme'));
+        if (ct && ct.enabled) {
+          var root = document.documentElement;
+          var fonts = {
+            system: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+            serif: "Georgia, 'Times New Roman', serif",
+            mono: "'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace",
+            rounded: "'Nunito', 'Segoe UI', system-ui, sans-serif"
+          };
+          root.style.setProperty('--wm-bg', ct.bg);
+          root.style.setProperty('--wm-panel', ct.bg);
+          root.style.setProperty('--wm-card', ct.surface);
+          root.style.setProperty('--wm-border', ct.border);
+          root.style.setProperty('--wm-accent', ct.accent);
+          root.style.setProperty('--wm-text', ct.text);
+          root.style.setProperty('--wm-muted', ct.muted);
+          root.style.setProperty('--wm-green', ct.success);
+          root.style.setProperty('--wm-radius', (parseInt(ct.radius, 10) || 0) + 'px');
+          root.style.setProperty('--wm-font', fonts[ct.font] || fonts.system);
+          root.setAttribute('data-wm-base', ct.base === 'light' ? 'light' : 'dark');
+          root.setAttribute('data-wm-palette', 'custom');
+        }
+      } catch (e) { /* malformed custom theme — fall through to preset */ }
+      // Layout preset palette (1–12). Legacy modes (13–50) resolve after boot.
+      if (!document.documentElement.getAttribute('data-wm-base')) {
+        var m = 1;
+        try { m = parseInt(JSON.parse(localStorage.getItem('waymark_home_template_mode')), 10) || 1; } catch(e2) {}
+        document.documentElement.setAttribute('data-wm-palette', (m >= 1 && m <= 12) ? String(m) : '1');
+      }
     })();
   </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -308,159 +334,240 @@
         </button>
       </div>
 
-      <!-- Scrollable settings body -->
+      <!-- Scrollable settings body: sticky section nav + grouped sections -->
       <div class="settings-body">
+        <nav class="settings-nav" aria-label="Settings sections">
+          <button type="button" class="settings-nav-item is-active" data-settings-nav="profile"><span class="settings-nav-icon">👤</span><span class="settings-nav-label">Profile</span></button>
+          <button type="button" class="settings-nav-item" data-settings-nav="appearance"><span class="settings-nav-icon">🎨</span><span class="settings-nav-label">Appearance</span></button>
+          <button type="button" class="settings-nav-item" data-settings-nav="workspace"><span class="settings-nav-icon">🗂️</span><span class="settings-nav-label">Workspace</span></button>
+          <button type="button" class="settings-nav-item" data-settings-nav="ai"><span class="settings-nav-icon">🤖</span><span class="settings-nav-label">AI &amp; Agent</span></button>
+          <button type="button" class="settings-nav-item" data-settings-nav="developer"><span class="settings-nav-icon">🛠️</span><span class="settings-nav-label">Developer</span></button>
+        </nav>
 
-      <!-- Profile section -->
-      <div class="settings-profile">
-        <img id="settings-avatar" src="" alt="" class="settings-avatar">
-        <div class="settings-profile-info">
-          <span id="settings-user-name" class="settings-name"></span>
-          <span id="settings-user-email" class="settings-email"></span>
-          <span id="settings-version" class="settings-version"></span>
+        <div class="settings-sections">
+
+          <!-- Profile -->
+          <section class="settings-group" id="settings-group-profile" data-settings-section="profile">
+            <h4 class="settings-group-title">Profile</h4>
+            <div class="settings-profile">
+              <img id="settings-avatar" src="" alt="" class="settings-avatar">
+              <div class="settings-profile-info">
+                <span id="settings-user-name" class="settings-name"></span>
+                <span id="settings-user-email" class="settings-email"></span>
+                <span id="settings-version" class="settings-version"></span>
+              </div>
+            </div>
+          </section>
+
+          <!-- Appearance: custom theme builder + base theme + home layout -->
+          <section class="settings-group" id="settings-group-appearance" data-settings-section="appearance">
+            <h4 class="settings-group-title">Appearance</h4>
+
+            <div class="settings-section theme-builder">
+              <div class="settings-row">
+                <span class="settings-label">Custom theme</span>
+                <input type="checkbox" id="settings-theme-custom-enabled" class="settings-toggle" aria-label="Enable custom theme">
+              </div>
+              <p class="settings-hint">Build your own palette, or start from a preset and tweak it. Applies across the whole app — menus, every template, everything.</p>
+
+              <div class="theme-builder-field theme-builder-presets-field">
+                <span class="settings-sublabel">Start from a preset</span>
+                <div class="theme-presets" id="theme-presets" aria-label="Theme presets"></div>
+              </div>
+
+              <div id="theme-builder-body" class="theme-builder-body">
+                <div class="settings-row">
+                  <span class="settings-label">Base</span>
+                  <div class="settings-segmented" id="theme-base-toggle">
+                    <button type="button" class="settings-seg-btn" data-theme-base="light">☀️ Light</button>
+                    <button type="button" class="settings-seg-btn" data-theme-base="dark">🌙 Dark</button>
+                  </div>
+                </div>
+
+                <div class="theme-builder-field">
+                  <span class="settings-sublabel">Colors</span>
+                  <div class="theme-swatches" id="theme-swatches"></div>
+                </div>
+
+                <div class="settings-row">
+                  <span class="settings-label">Corner radius <span id="theme-radius-value" class="settings-value">12px</span></span>
+                  <input type="range" id="theme-radius" class="settings-range" min="0" max="28" step="1" value="12" aria-label="Corner radius">
+                </div>
+
+                <label class="settings-row">
+                  <span class="settings-label">Font</span>
+                  <select id="theme-font" class="settings-select" aria-label="Theme font">
+                    <option value="system">System</option>
+                    <option value="serif">Serif</option>
+                    <option value="mono">Mono</option>
+                    <option value="rounded">Rounded</option>
+                  </select>
+                </label>
+
+                <div class="theme-preview" id="theme-preview">
+                  <div class="theme-preview-card">
+                    <div class="theme-preview-head">
+                      <span class="theme-preview-dot"></span>
+                      <span class="theme-preview-title">Live preview</span>
+                      <button type="button" class="theme-preview-btn">Button</button>
+                    </div>
+                    <p class="theme-preview-text">The quick brown fox jumps over the lazy dog.</p>
+                    <p class="theme-preview-muted">Muted secondary text · <span class="theme-preview-link">a link</span></p>
+                  </div>
+                </div>
+
+                <div class="settings-row settings-row-actions">
+                  <button type="button" id="settings-theme-reset" class="btn btn-secondary btn-sm">Reset to preset</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-section">
+              <div class="settings-row">
+                <span class="settings-label">App theme</span>
+                <div class="settings-theme-toggle">
+                  <button type="button" data-action="settings-theme-light" id="settings-theme-light" class="settings-theme-btn active" data-theme="light">☀️ Light</button>
+                  <button type="button" data-action="settings-theme-dark" id="settings-theme-dark" class="settings-theme-btn" data-theme="dark">🌙 Dark</button>
+                  <button type="button" data-action="settings-theme-system" id="settings-theme-system" class="settings-theme-btn" data-theme="system">🖥️ System</button>
+                </div>
+              </div>
+              <p class="settings-hint settings-hint-compact">Light/Dark base for the app. A custom theme above overrides these colors.</p>
+            </div>
+
+            <div class="settings-section">
+              <h4 class="settings-section-title">Home Page Layout</h4>
+              <p class="settings-hint">Pick the Wayboard architecture for your home. Your Waymarks stay put while the scenery changes.</p>
+
+              <div class="settings-row">
+                <span class="settings-label">Architecture</span>
+                <div class="settings-home-template-picker">
+                  <button type="button" data-action="settings-home-template-prev" id="settings-home-template-prev" class="btn btn-secondary btn-sm" title="Previous layout" aria-label="Previous layout">‹</button>
+                  <select id="settings-home-template" class="settings-select" aria-label="Home template"></select>
+                  <button type="button" data-action="settings-home-template-next" id="settings-home-template-next" class="btn btn-secondary btn-sm" title="Next layout" aria-label="Next layout">›</button>
+                </div>
+              </div>
+              <label class="settings-row">
+                <span class="settings-label">Live preview on Home</span>
+                <input type="checkbox" id="settings-home-template-preview" class="settings-toggle" aria-label="Preview home template" checked>
+              </label>
+            </div>
+          </section>
+
+          <!-- Workspace -->
+          <section class="settings-group" id="settings-group-workspace" data-settings-section="workspace">
+            <h4 class="settings-group-title">Workspace</h4>
+            <div class="settings-section">
+              <label class="settings-row">
+                <span class="settings-label">Auto-refresh sheets</span>
+                <input type="checkbox" id="settings-auto-refresh" class="settings-toggle" aria-label="Settings auto refresh">
+              </label>
+
+              <label class="settings-row">
+                <span class="settings-label">Sort explorer by</span>
+                <select id="settings-sort-order" class="settings-select" aria-label="Sort order">
+                  <option value="name">Name</option>
+                  <option value="modified">Last Modified</option>
+                </select>
+              </label>
+
+              <div class="settings-row">
+                <span class="settings-label">Import directory</span>
+                <div class="settings-folder-picker">
+                  <span id="settings-import-folder" class="settings-folder-name">Waymark / Imports</span>
+                  <button type="button" data-action="settings-choose-folder" id="settings-choose-folder" class="btn btn-secondary btn-sm">Choose</button>
+                  <button type="button" data-action="settings-reset-folder" id="settings-reset-folder" class="btn btn-secondary btn-sm hidden">Reset</button>
+                </div>
+              </div>
+
+              <div id="settings-folder-browser" class="settings-folder-browser hidden"></div>
+            </div>
+          </section>
+
+          <!-- AI & Agent -->
+          <section class="settings-group" id="settings-group-ai" data-settings-section="ai">
+            <h4 class="settings-group-title">AI &amp; Agent</h4>
+            <div class="settings-section">
+              <p class="settings-hint">Choose which AI model to use and store API keys securely in your password vault.</p>
+
+              <div class="settings-row">
+                <span class="settings-label">Active Model</span>
+                <select id="settings-ai-model" class="settings-select" aria-label="AI model">
+                  <option value="gemini">Google Gemini (default)</option>
+                  <option value="claude">Anthropic Claude</option>
+                </select>
+              </div>
+
+              <div class="settings-row">
+                <span class="settings-label">Current Status</span>
+                <div id="settings-ai-status" class="settings-ai-status">
+                  <span id="settings-ai-status-text" class="settings-ai-status-text">Ready: Using environment variables</span>
+                </div>
+              </div>
+
+              <div class="settings-row">
+                <span class="settings-label">Setup Instructions</span>
+                <button type="button" data-action="settings-ai-help-btn" id="settings-ai-help-btn" class="btn btn-secondary btn-sm">View Setup Guide</button>
+              </div>
+
+              <div class="settings-row">
+                <span class="settings-label">Waymark AI Agent</span>
+                <div class="settings-folder-picker">
+                  <span id="settings-agent-host-label" class="settings-folder-name">Personal Agent</span>
+                  <button type="button" data-action="settings-configure-agent-btn" id="settings-configure-agent-btn" class="btn btn-secondary btn-sm">Configure / Switch</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Developer -->
+          <section class="settings-group" id="settings-group-developer" data-settings-section="developer">
+            <h4 class="settings-group-title">Developer</h4>
+            <div class="settings-section">
+              <label class="settings-row">
+                <span class="settings-label">MQTT debug bridge</span>
+                <input type="checkbox" id="settings-mqtt-bridge" class="settings-toggle" aria-label="Enable MQTT bridge">
+              </label>
+              <p class="settings-hint settings-hint-compact">Connects to an AI dev agent for live debugging via MQTT.</p>
+
+              <div class="settings-row">
+                <span class="settings-label">MQTT broker endpoint</span>
+                <div class="flex-row-fill">
+                  <input type="text" id="settings-mqtt-url" class="settings-ref-input flex-1" aria-label="MQTT broker WebSocket URL" placeholder="wss://host/waymark/mqtt" autocomplete="off" spellcheck="false">
+                  <button type="button" data-action="settings-mqtt-url-apply" id="settings-mqtt-url-apply" class="btn btn-primary btn-sm">Apply</button>
+                </div>
+              </div>
+              <p class="settings-hint settings-hint-compact">Leave empty to auto-detect from current host. Requires reconnect.</p>
+            </div>
+
+            <div id="settings-version-section" class="settings-section hidden">
+              <h4 class="settings-section-title">App Version</h4>
+              <p class="settings-version-desc">Pin yourself to a specific version. Updates become optional — you choose when to move forward.</p>
+
+              <div class="settings-row">
+                <span class="settings-label">Branch / Version</span>
+                <div class="settings-version-picker">
+                  <input type="text" id="settings-github-ref" class="settings-ref-input" aria-label="GitHub reference or branch" placeholder="main" autocomplete="off" spellcheck="false">
+                  <button type="button" data-action="settings-apply-ref" id="settings-apply-ref" class="btn btn-primary btn-sm">Apply</button>
+                </div>
+              </div>
+
+              <div id="settings-ref-status" class="settings-ref-status hidden"></div>
+
+              <div class="settings-row">
+                <span class="settings-label">Quick switch</span>
+                <div id="settings-ref-suggestions" class="settings-ref-suggestions">
+                  <button type="button" data-action="settings-ref-tag" class="settings-ref-tag active" data-ref="main">main (latest)</button>
+                </div>
+              </div>
+
+              <div class="settings-row settings-current-ref-row">
+                <span class="settings-label">Currently serving</span>
+                <code id="settings-current-ref" class="settings-current-ref">main</code>
+              </div>
+            </div>
+          </section>
+
         </div>
-      </div>
-
-      <!-- Preferences -->
-      <div class="settings-section">
-        <h4 class="settings-section-title">Preferences</h4>
-
-        <div class="settings-row">
-          <span class="settings-label">Theme</span>
-          <div class="settings-theme-toggle">
-            <button type="button" data-action="settings-theme-light" id="settings-theme-light" class="settings-theme-btn active" data-theme="light">☀️ Light</button>
-            <button type="button" data-action="settings-theme-dark" id="settings-theme-dark" class="settings-theme-btn" data-theme="dark">🌙 Dark</button>
-            <button type="button" data-action="settings-theme-system" id="settings-theme-system" class="settings-theme-btn" data-theme="system">🖥️ System</button>
-          </div>
-        </div>
-
-        <label class="settings-row">
-          <span class="settings-label">Auto-refresh sheets</span>
-          <input type="checkbox" id="settings-auto-refresh" class="settings-toggle" aria-label="Settings auto refresh">
-        </label>
-
-        <label class="settings-row">
-          <span class="settings-label">Sort explorer by</span>
-          <select id="settings-sort-order" class="settings-select" aria-label="Sort order">
-            <option value="name">Name</option>
-            <option value="modified">Last Modified</option>
-          </select>
-        </label>
-
-        <div class="settings-row">
-          <span class="settings-label">Import directory</span>
-          <div class="settings-folder-picker">
-            <span id="settings-import-folder" class="settings-folder-name">Waymark / Imports</span>
-            <button type="button" data-action="settings-choose-folder" id="settings-choose-folder" class="btn btn-secondary btn-sm">Choose</button>
-            <button type="button" data-action="settings-reset-folder" id="settings-reset-folder" class="btn btn-secondary btn-sm hidden">Reset</button>
-          </div>
-        </div>
-
-        <!-- Folder browser (hidden until Choose is clicked) -->
-        <div id="settings-folder-browser" class="settings-folder-browser hidden"></div>
-      </div>
-
-      <!-- Home Page Layout Section -->
-      <div class="settings-section">
-        <h4 class="settings-section-title">Home Page Layout Template</h4>
-        <p class="settings-hint">Choose one of 50 Wayboard layouts to map your workspace. Your Waymarks stay put while the scenery changes. Default path is 1.</p>
-
-        <div class="settings-row">
-          <span class="settings-label">Architecture</span>
-          <div class="settings-home-template-picker">
-            <button type="button" data-action="settings-home-template-prev" id="settings-home-template-prev" class="btn btn-secondary btn-sm" title="Previous layout" aria-label="Previous layout">‹</button>
-            <select id="settings-home-template" class="settings-select" aria-label="Home template"></select>
-            <button type="button" data-action="settings-home-template-next" id="settings-home-template-next" class="btn btn-secondary btn-sm" title="Next layout" aria-label="Next layout">›</button>
-          </div>
-        </div>
-        <label class="settings-row">
-          <span class="settings-label">Live preview on Home</span>
-          <input type="checkbox" id="settings-home-template-preview" class="settings-toggle" aria-label="Preview home template" checked>
-        </label>
-      </div>
-
-      <!-- AI Models Section -->
-      <div class="settings-section">
-        <h4 class="settings-section-title">AI Models</h4>
-        <p class="settings-hint">Choose which AI model to use and store API keys securely in your password vault.</p>
-
-        <div class="settings-row">
-          <span class="settings-label">Active Model</span>
-          <select id="settings-ai-model" class="settings-select" aria-label="AI model">
-            <option value="gemini">Google Gemini (default)</option>
-            <option value="claude">Anthropic Claude</option>
-          </select>
-        </div>
-
-        <div class="settings-row">
-          <span class="settings-label">Current Status</span>
-          <div id="settings-ai-status" class="settings-ai-status">
-            <span id="settings-ai-status-text" class="settings-ai-status-text">Ready: Using environment variables</span>
-          </div>
-        </div>
-
-        <div class="settings-row">
-          <span class="settings-label">Setup Instructions</span>
-          <button type="button" data-action="settings-ai-help-btn" id="settings-ai-help-btn" class="btn btn-secondary btn-sm">View Setup Guide</button>
-        </div>
-
-        <div class="settings-row">
-          <span class="settings-label">Waymark AI Agent</span>
-          <div class="settings-folder-picker">
-            <span id="settings-agent-host-label" class="settings-folder-name">Personal Agent</span>
-            <button type="button" data-action="settings-configure-agent-btn" id="settings-configure-agent-btn" class="btn btn-secondary btn-sm">Configure / Switch</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Developer Tools -->
-      <div class="settings-section">
-        <h4 class="settings-section-title">Developer</h4>
-
-        <label class="settings-row">
-          <span class="settings-label">MQTT debug bridge</span>
-          <input type="checkbox" id="settings-mqtt-bridge" class="settings-toggle" aria-label="Enable MQTT bridge">
-        </label>
-        <p class="settings-hint settings-hint-compact">Connects to an AI dev agent for live debugging via MQTT.</p>
-
-        <div class="settings-row">
-          <span class="settings-label">MQTT broker endpoint</span>
-          <div class="flex-row-fill">
-            <input type="text" id="settings-mqtt-url" class="settings-ref-input flex-1" aria-label="MQTT broker WebSocket URL" placeholder="wss://host/waymark/mqtt" autocomplete="off" spellcheck="false">
-            <button type="button" data-action="settings-mqtt-url-apply" id="settings-mqtt-url-apply" class="btn btn-primary btn-sm">Apply</button>
-          </div>
-        </div>
-        <p class="settings-hint settings-hint-compact">Leave empty to auto-detect from current host. Requires reconnect.</p>
-      </div>
-
-      <!-- Version Pinning (only visible when GitHub source is active) -->
-      <div id="settings-version-section" class="settings-section hidden">
-        <h4 class="settings-section-title">App Version</h4>
-        <p class="settings-version-desc">Pin yourself to a specific version. Updates become optional — you choose when to move forward.</p>
-
-        <div class="settings-row">
-          <span class="settings-label">Branch / Version</span>
-          <div class="settings-version-picker">
-            <input type="text" id="settings-github-ref" class="settings-ref-input" aria-label="GitHub reference or branch" placeholder="main" autocomplete="off" spellcheck="false">
-            <button type="button" data-action="settings-apply-ref" id="settings-apply-ref" class="btn btn-primary btn-sm">Apply</button>
-          </div>
-        </div>
-
-        <div id="settings-ref-status" class="settings-ref-status hidden"></div>
-
-        <div class="settings-row">
-          <span class="settings-label">Quick switch</span>
-          <div id="settings-ref-suggestions" class="settings-ref-suggestions">
-            <button type="button" data-action="settings-ref-tag" class="settings-ref-tag active" data-ref="main">main (latest)</button>
-          </div>
-        </div>
-
-        <div class="settings-row settings-current-ref-row">
-          <span class="settings-label">Currently serving</span>
-          <code id="settings-current-ref" class="settings-current-ref">main</code>
-        </div>
-      </div>
-
       </div><!-- /.settings-body -->
 
       <div class="modal-footer">

@@ -21,6 +21,7 @@ import * as agent from './agent.js';
 import * as notifications from './notifications.js';
 import * as collab from './collab.js';
 import * as wayboard from './wayboard.js';
+import * as theme from './theme.js';
 import * as dashboard from './dashboard.js';
 import { getAndroidBridge, isTrustedAndroidWebView } from './platform.js';
 import { initWebJSCLI } from './web-js-cli.js';
@@ -272,9 +273,9 @@ function navigate(type, id, name) {
 async function boot() {
   showLoading();
 
-  // Zero-flash: apply the saved Home layout mode from the localStorage mirror
-  // before the home view paints.
-  try { wayboard.applyHomeMode(storage.getHomeTemplateMode()); } catch { /* non-fatal */ }
+  // Zero-flash: apply the saved theme (custom builder theme or layout preset)
+  // from the localStorage mirror before the home view paints.
+  try { theme.applyActiveTheme(wayboard.applyHomeMode); } catch { /* non-fatal */ }
 
   // Init sub-modules
   checklist.init();
@@ -2693,6 +2694,12 @@ function openSettingsModal() {
     btn.classList.toggle('active', btn.dataset.theme === currentTheme);
   });
 
+  // Sync the Appearance theme builder to the active theme.
+  try {
+    _builderTheme = theme.getActiveTheme();
+    syncBuilderInputs();
+  } catch { /* builder not wired yet */ }
+
   // Import folder display
   const customName = userData.getImportFolderName();
   settingsImportFolder.textContent = customName || 'Waymark / Imports';
@@ -2797,6 +2804,227 @@ function wireHomeTemplateSelector() {
     const cur = parseInt(select.value, 10) || 1;
     applyMode(cur >= max ? 1 : cur + 1);
   });
+}
+
+/* ---------- Settings section navigation (sticky sidebar) ---------- */
+
+/**
+ * Wire the Settings sidebar nav: click scrolls to the section; scrolling
+ * highlights the section currently in view (scrollspy).
+ */
+function wireSettingsNav() {
+  const body = settingsModal?.querySelector('.settings-body');
+  if (!body) return;
+  const navItems = Array.from(settingsModal.querySelectorAll('.settings-nav-item'));
+  const setActive = (key) => {
+    navItems.forEach(btn => btn.classList.toggle('is-active', btn.dataset.settingsNav === key));
+  };
+
+  navItems.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.settingsNav;
+      const section = settingsModal.querySelector(`[data-settings-section="${key}"]`);
+      if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setActive(key);
+    });
+  });
+
+  // Scrollspy — highlight whichever section header is nearest the top.
+  if ('IntersectionObserver' in window) {
+    const sections = Array.from(settingsModal.querySelectorAll('[data-settings-section]'));
+    const seen = new Map();
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) seen.set(e.target, e.intersectionRatio);
+      let best = null; let bestRatio = -1;
+      for (const [el, ratio] of seen) {
+        if (ratio > bestRatio) { bestRatio = ratio; best = el; }
+      }
+      if (best && bestRatio > 0) setActive(best.dataset.settingsSection);
+    }, { root: body, threshold: [0.1, 0.5, 0.9] });
+    sections.forEach(s => io.observe(s));
+  }
+}
+
+/* ---------- Appearance theme builder ---------- */
+
+const THEME_SWATCH_FIELDS = [
+  { key: 'bg', label: 'Background' },
+  { key: 'surface', label: 'Surface' },
+  { key: 'accent', label: 'Accent' },
+  { key: 'text', label: 'Text' },
+  { key: 'muted', label: 'Muted text' },
+  { key: 'border', label: 'Border' },
+  { key: 'success', label: 'Success' },
+];
+
+let _builderTheme = null;
+let _builderSaveTimer = null;
+
+/** Persist the working theme: localStorage mirror immediately (so reloads are
+ *  zero-flash), Drive save debounced. */
+function persistBuilderTheme() {
+  try { storage.setCustomTheme(_builderTheme); } catch { /* mirror best-effort */ }
+  clearTimeout(_builderSaveTimer);
+  _builderSaveTimer = setTimeout(() => {
+    userData.setCustomTheme(_builderTheme).catch(() => {});
+  }, 300);
+}
+
+/** Reflect `_builderTheme` into the builder inputs (colors, base, radius, font). */
+function syncBuilderInputs() {
+  if (!_builderTheme) return;
+  const enabled = document.getElementById('settings-theme-custom-enabled');
+  if (enabled) enabled.checked = Boolean(_builderTheme.enabled);
+  const builder = settingsModal.querySelector('.theme-builder');
+  if (builder) builder.classList.toggle('theme-disabled', !_builderTheme.enabled);
+
+  settingsModal.querySelectorAll('#theme-base-toggle .settings-seg-btn').forEach(btn => {
+    btn.classList.toggle('is-active', btn.dataset.themeBase === _builderTheme.base);
+  });
+  for (const { key } of THEME_SWATCH_FIELDS) {
+    const color = document.getElementById(`theme-color-${key}`);
+    const hex = document.getElementById(`theme-hex-${key}`);
+    if (color) color.value = _builderTheme[key];
+    if (hex) hex.value = _builderTheme[key];
+  }
+  const radius = document.getElementById('theme-radius');
+  const radiusVal = document.getElementById('theme-radius-value');
+  if (radius) radius.value = String(_builderTheme.radius);
+  if (radiusVal) radiusVal.textContent = `${_builderTheme.radius}px`;
+  const font = document.getElementById('theme-font');
+  if (font) font.value = _builderTheme.font;
+
+  // Highlight the preset chip that matches the current theme (if any).
+  settingsModal.querySelectorAll('.theme-preset').forEach(chip => {
+    const p = theme.PALETTES[chip.dataset.preset];
+    const match = p && ['bg', 'surface', 'accent', 'text', 'border'].every(k => (p[k] || '').toLowerCase() === (_builderTheme[k] || '').toLowerCase());
+    chip.classList.toggle('is-active', Boolean(_builderTheme.enabled && match));
+  });
+}
+
+/** Apply the working theme live (global tokens) and persist it. */
+function commitBuilderTheme() {
+  _builderTheme.enabled = true;
+  theme.applyCustomTheme(_builderTheme);
+  const enabled = document.getElementById('settings-theme-custom-enabled');
+  if (enabled) enabled.checked = true;
+  const builder = settingsModal.querySelector('.theme-builder');
+  if (builder) builder.classList.remove('theme-disabled');
+  persistBuilderTheme();
+}
+
+/**
+ * Build the preset chips + colour swatches and wire every control of the
+ * Appearance theme builder (enable toggle, presets, base, colours, radius,
+ * font, reset). Changes apply live across the whole app and persist.
+ */
+function wireThemeBuilder() {
+  const presets = document.getElementById('theme-presets');
+  const swatches = document.getElementById('theme-swatches');
+  const enabled = document.getElementById('settings-theme-custom-enabled');
+  if (!presets || !swatches || !enabled) return;
+
+  _builderTheme = theme.getActiveTheme();
+
+  // Preset chips.
+  presets.innerHTML = '';
+  for (const [id, p] of Object.entries(theme.PALETTES)) {
+    const chip = el('button', {
+      className: 'theme-preset',
+      type: 'button',
+      title: `${p.name} (${p.base})`,
+      'aria-label': `Preset ${p.name}`,
+    });
+    chip.dataset.preset = id;
+    chip.style.background = `linear-gradient(135deg, ${p.bg} 0 55%, ${p.accent} 55% 100%)`;
+    chip.addEventListener('click', () => {
+      _builderTheme = theme.normalizeTheme({ ...theme.PALETTES[id], enabled: true, preset: Number(id) });
+      commitBuilderTheme();
+      syncBuilderInputs();
+    });
+    presets.appendChild(chip);
+  }
+
+  // Colour swatches (native color input + hex text, kept in sync).
+  swatches.innerHTML = '';
+  for (const { key, label } of THEME_SWATCH_FIELDS) {
+    const color = el('input', { type: 'color', id: `theme-color-${key}`, 'aria-label': `${label} color` });
+    const hex = el('input', { type: 'text', id: `theme-hex-${key}`, className: 'theme-swatch-hex', 'aria-label': `${label} hex`, spellcheck: 'false', autocomplete: 'off' });
+    const commit = (val) => {
+      if (!/^#[0-9a-fA-F]{6}$/.test(val)) return;
+      _builderTheme[key] = val.toLowerCase();
+      color.value = _builderTheme[key];
+      hex.value = _builderTheme[key];
+      commitBuilderTheme();
+    };
+    color.addEventListener('input', () => commit(color.value));
+    hex.addEventListener('change', () => commit(hex.value.trim()));
+    swatches.appendChild(el('div', { className: 'theme-swatch' }, [
+      color,
+      el('span', { className: 'theme-swatch-name' }, [label]),
+      hex,
+    ]));
+  }
+
+  // Enable / disable the custom theme.
+  enabled.addEventListener('change', () => {
+    if (enabled.checked) {
+      _builderTheme.enabled = true;
+      theme.applyCustomTheme(_builderTheme);
+      persistBuilderTheme();
+    } else {
+      _builderTheme.enabled = false;
+      theme.saveCustomTheme(_builderTheme).catch(() => {});
+      theme.clearCustomTheme();
+      wayboard.applyHomeMode(storage.getHomeTemplateMode(), { theme: true });
+    }
+    syncBuilderInputs();
+  });
+
+  // Base (light/dark) segmented control.
+  settingsModal.querySelectorAll('#theme-base-toggle .settings-seg-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _builderTheme.base = btn.dataset.themeBase === 'light' ? 'light' : 'dark';
+      commitBuilderTheme();
+      syncBuilderInputs();
+    });
+  });
+
+  // Corner radius.
+  const radius = document.getElementById('theme-radius');
+  if (radius) {
+    radius.addEventListener('input', () => {
+      _builderTheme.radius = parseInt(radius.value, 10) || 0;
+      const rv = document.getElementById('theme-radius-value');
+      if (rv) rv.textContent = `${_builderTheme.radius}px`;
+      commitBuilderTheme();
+    });
+  }
+
+  // Font.
+  const font = document.getElementById('theme-font');
+  if (font) {
+    font.addEventListener('change', () => {
+      _builderTheme.font = font.value;
+      commitBuilderTheme();
+    });
+  }
+
+  // Reset to the active layout preset (turns the custom theme off).
+  const reset = document.getElementById('settings-theme-reset');
+  if (reset) {
+    reset.addEventListener('click', () => {
+      const presetId = wayboard.resolveLayout(storage.getHomeTemplateMode());
+      _builderTheme = theme.normalizeTheme({ ...theme.PALETTES[presetId], enabled: false, preset: presetId });
+      theme.saveCustomTheme(_builderTheme).catch(() => {});
+      theme.clearCustomTheme();
+      wayboard.applyHomeMode(storage.getHomeTemplateMode(), { theme: true });
+      syncBuilderInputs();
+      showToast('Theme reset to your layout preset', 'success');
+    });
+  }
+
+  syncBuilderInputs();
 }
 
 /* ---------- Version Picker helpers ---------- */
@@ -2925,6 +3153,8 @@ function initSettingsModal() {
   });
 
   wireHomeTemplateSelector();
+  wireSettingsNav();
+  wireThemeBuilder();
 
   // Auto-refresh toggle
   settingsAutoRefresh.addEventListener('change', () => {

@@ -102,7 +102,8 @@ html[data-wm-palette="12"] {
 html[data-wm-palette="2"],
 html[data-wm-palette="3"],
 html[data-wm-palette="7"],
-html[data-wm-palette="11"] {
+html[data-wm-palette="11"],
+html[data-wm-palette="custom"][data-wm-base="light"] {
   color-scheme: light;
   --color-primary-light: color-mix(in srgb, var(--wm-accent) 14%, #ffffff);
   --color-success-light: #dcfce7;
@@ -121,4 +122,35 @@ html[data-wm-palette="11"] {
   --tint-indigo-bg: #eef2ff; --tint-indigo-text: #4338ca;
   --tint-gray-bg: #f1f5f9;   --tint-gray-text: #64748b;
   --tint-teal-bg: #ccfbf1;   --tint-teal-text: #115e59;
+}
+
+/* ---------- Custom theme (Appearance builder) ----------
+   Raw --wm-* tokens are stamped inline on <html> by js/theme.js; data-wm-base
+   selects the semantic light/dark tint set above and below. The custom theme's
+   font applies app-wide so the whole platform feels cohesive. */
+html[data-wm-palette="custom"][data-wm-base="dark"] {
+  color-scheme: dark;
+  --color-primary-light: color-mix(in srgb, var(--wm-accent) 22%, transparent);
+  --color-success-light: rgba(74, 222, 128, 0.18);
+  --color-error: #ef4444;
+  --color-error-light: rgba(248, 113, 113, 0.18);
+  --color-warning: #fbbf24;
+  --color-shared: #a78bfa;
+  --color-shared-light: rgba(167, 139, 250, 0.18);
+  --shadow: 0 1px 3px rgba(0, 0, 0, .3), 0 1px 2px rgba(0, 0, 0, .2);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, .4);
+  --tint-green-bg: rgba(74, 222, 128, 0.16);  --tint-green-text: #4ade80;
+  --tint-red-bg: rgba(248, 113, 113, 0.16);   --tint-red-text: #fca5a5;
+  --tint-amber-bg: rgba(251, 191, 36, 0.14);  --tint-amber-text: #fcd34d;
+  --tint-blue-bg: rgba(96, 165, 250, 0.16);   --tint-blue-text: #93c5fd;
+  --tint-purple-bg: rgba(167, 139, 250, 0.16); --tint-purple-text: #c4b5fd;
+  --tint-indigo-bg: rgba(129, 140, 248, 0.14); --tint-indigo-text: #a5b4fc;
+  --tint-gray-bg: rgba(148, 163, 184, 0.1);   --tint-gray-text: #94a3b8;
+  --tint-teal-bg: rgba(94, 234, 212, 0.14);   --tint-teal-text: #5eead4;
+}
+
+/* Custom-theme font applies across the whole app (presets leave the app font
+   untouched). The builder sets --wm-font; fall back to the system stack. */
+html[data-wm-palette="custom"] body {
+  font-family: var(--wm-font, system-ui, -apple-system, sans-serif);
 }
