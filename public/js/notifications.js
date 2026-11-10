@@ -1137,15 +1137,21 @@ function _openSettingsModal() {
     ]),
     el('div', { className: 'modal-body notif-settings-modal-body' }, [
       el('div', { className: 'notif-settings-grid' }, [
-        ruleSection,
         collabSection,
-        perWaymarkSection,
         sheetSection,
+        perWaymarkSection,
+        ruleSection,
         rulesSection,
         emailSection,
       ]),
     ]),
-    el('div', { className: 'modal-footer' }, [saveBtn]),
+    el('div', { className: 'modal-footer notif-settings-footer' }, [
+      el('button', {
+        className: 'notif-settings-cancel',
+        on: { click: () => overlay.remove() },
+      }, ['Cancel']),
+      saveBtn,
+    ]),
   ]);
 
   const overlay = el('div', {

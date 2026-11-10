@@ -589,122 +589,118 @@ input#search-input::placeholder { color: var(--color-text-muted); }
 .notif-settings-btn:hover { background: var(--color-bg); }
 
 .notif-settings-modal-overlay {
-  align-items: stretch;
+  align-items: center;
   justify-content: center;
-  padding: 14px;
+  padding: 24px;
 }
 
+/* Sizes to content up to a cap — no forced tall empty box. */
 .notif-settings-modal {
-  width: min(1200px, calc(100vw - 28px));
-  max-width: 1200px;
-  height: min(94vh, 980px);
-  max-height: min(94vh, 980px);
+  width: min(880px, calc(100vw - 32px));
+  max-width: 880px;
+  max-height: 88vh;
 }
 
 .notif-settings-modal-header {
-  padding: 18px 22px 10px;
+  padding: 18px 22px 12px;
   border-bottom: 1px solid var(--color-border);
   align-items: flex-start;
 }
 
 .notif-settings-description {
-  margin: 6px 0 0;
+  margin: 4px 0 0;
   padding: 0;
+  max-width: 60ch;
 }
 
 .notif-settings-modal-body {
-  padding: 14px 18px 8px;
+  padding: 16px 20px 4px;
 }
 
+/* Masonry-style columns so short sections tuck under tall ones (no gaps). */
 .notif-settings-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  align-items: start;
+  column-count: 2;
+  column-gap: 14px;
 }
 
 .notif-settings-section {
-  background: var(--color-surface);
+  background: var(--color-bg);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  padding: 12px;
+  padding: 14px;
+  margin: 0 0 14px;
+  break-inside: avoid;
+  -webkit-column-break-inside: avoid;
 }
 
 .notif-sheet-label {
-  font-size: 0.83rem;
+  font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   color: var(--color-text-muted);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
-.notif-settings-rules {
+/* Checkboxes pick up the brand accent instead of raw browser default. */
+.notif-settings-toggle,
+.notif-collab-toggle,
+.notif-waymark-toggle {
+  accent-color: var(--color-primary);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.notif-settings-rules,
+.notif-collab-rules {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin: 6px 0 0;
+  gap: 2px;
+  margin: 0;
 }
 
-.notif-settings-rule {
+/* Inner rows are borderless — the card is the only box. Hover gives feedback. */
+.notif-settings-rule,
+.notif-collab-rule {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
+  padding: 9px 10px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background var(--transition);
 }
 
-.notif-settings-rule:hover { background: var(--color-bg); }
+.notif-settings-rule:hover,
+.notif-collab-rule:hover { background: var(--color-surface); }
 
-.notif-settings-rule-icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 2px; }
+.notif-settings-rule-icon { font-size: 1.05rem; flex-shrink: 0; margin-top: 1px; }
 
 .notif-settings-rule-label {
-  font-size: 0.85rem;
+  font-size: 0.86rem;
   font-weight: 600;
   color: var(--color-text);
 }
 
 .notif-settings-rule-desc {
-  font-size: 0.78rem;
+  font-size: 0.77rem;
   color: var(--color-text-muted);
   margin-top: 2px;
+  line-height: 1.4;
 }
 
-.notif-settings-toggle { margin-top: 3px; flex-shrink: 0; }
-
-/* Collaboration category + per-Waymark toggles reuse the settings-rule look */
-.notif-collab-section, .notif-waymark-section { margin-top: 0; }
-
-.notif-collab-rules {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 8px 0;
-}
-
-.notif-collab-rule {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  cursor: pointer;
-  transition: background var(--transition);
-}
-
-.notif-collab-rule:hover { background: var(--color-bg); }
+.notif-settings-toggle,
 .notif-collab-toggle { margin-top: 3px; flex-shrink: 0; }
+
+.notif-collab-section, .notif-waymark-section { margin-top: 0; }
 
 .notif-waymark-rules {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: 8px 0;
-  max-height: 280px;
+  gap: 2px;
+  margin: 2px 0 0;
+  max-height: 220px;
   overflow-y: auto;
 }
 
@@ -713,13 +709,12 @@ input#search-input::placeholder { color: var(--color-text-muted); }
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background var(--transition);
 }
 
-.notif-waymark-rule:hover { background: var(--color-bg); }
+.notif-waymark-rule:hover { background: var(--color-surface); }
 .notif-waymark-toggle { flex-shrink: 0; }
 .notif-waymark-rule-icon { font-size: 1rem; flex-shrink: 0; }
 .notif-waymark-rule-label {
@@ -739,11 +734,9 @@ input#search-input::placeholder { color: var(--color-text-muted); }
 
 .notif-settings-email {
   margin-top: 0;
-  padding: 12px;
-  background: var(--color-bg);
-  border-radius: var(--radius);
-  font-size: 0.83rem;
+  font-size: 0.8rem;
   color: var(--color-text-muted);
+  line-height: 1.45;
 }
 
 .notif-settings-email p { margin: 0 0 8px; }
@@ -764,6 +757,23 @@ input#search-input::placeholder { color: var(--color-text-muted); }
 }
 
 .notif-settings-save:hover { opacity: 0.9; }
+
+.notif-settings-footer {
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.notif-settings-cancel {
+  background: none;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  padding: 8px 18px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.notif-settings-cancel:hover { background: var(--color-bg); }
 
 .notif-sheet-status {
   display: flex;
@@ -872,17 +882,16 @@ input#search-input::placeholder { color: var(--color-text-muted); }
     border-radius: 0;
   }
   .notif-settings-modal-header {
-    padding: 14px 14px 8px;
+    padding: 14px 16px 10px;
   }
   .notif-settings-modal-body {
-    padding: 10px 10px 6px;
+    padding: 14px 14px 4px;
   }
   .notif-settings-grid {
-    grid-template-columns: 1fr;
-    gap: 10px;
+    column-count: 1;
   }
   .notif-waymark-rules {
-    max-height: 220px;
+    max-height: 200px;
   }
 }
 
