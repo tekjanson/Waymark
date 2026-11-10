@@ -101,8 +101,8 @@
 }
 
 .okr-progress-low {
-  background: var(--color-error, #dc2626);
-  color: var(--color-error, #dc2626);
+  background: var(--color-error, var(--color-error));
+  color: var(--color-error, var(--color-error));
 }
 
 /* ---------- KR list ---------- */

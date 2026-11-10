@@ -104,7 +104,7 @@
 .habit-done:hover { background: #bbf7d0; }
 .habit-partial { background: #fef9c3; color: #ca8a04; font-weight: 600; }
 .habit-partial:hover { background: #fef08a; }
-.habit-missed  { background: #fee2e2; color: #dc2626; font-weight: 600; }
+.habit-missed  { background: #fee2e2; color: var(--color-error); font-weight: 600; }
 .habit-missed:hover { background: #fecaca; }
 .habit-empty:hover { background: #f1f5f9; }
 
@@ -162,7 +162,7 @@
 }
 .habit-day-item-done .habit-day-check { background: #16a34a; color: #fff; border-color: #16a34a; }
 .habit-day-item-partial .habit-day-check { background: #ca8a04; color: #fff; border-color: #ca8a04; }
-.habit-day-item-missed .habit-day-check { background: #dc2626; color: #fff; border-color: #dc2626; }
+.habit-day-item-missed .habit-day-check { background: var(--color-error); color: #fff; border-color: var(--color-error); }
 .habit-day-info { display: flex; flex-direction: column; gap: 2px; }
 .habit-day-name { font-weight: 600; font-size: 0.9rem; color: var(--color-text); }
 .habit-day-streak { font-size: 0.75rem; color: var(--color-text-muted); }
@@ -226,9 +226,9 @@
 .habit-rate-mid { background: #fef9c3; }
 .habit-rate-mid .habit-month-day-dot { background: #ca8a04; }
 .habit-rate-low { background: #fee2e2; }
-.habit-rate-low .habit-month-day-dot { background: #dc2626; }
+.habit-rate-low .habit-month-day-dot { background: var(--color-error); }
 .habit-rate-zero { background: #f1f5f9; }
-.habit-rate-zero .habit-month-day-dot { background: #94a3b8; }
+.habit-rate-zero .habit-month-day-dot { background: var(--tint-gray-text); }
 .habit-rate-none { background: transparent; }
 
 /* No-data banners (month + year) */
@@ -446,7 +446,7 @@
   font-size: 0.82rem; font-weight: 500; margin-bottom: 12px;
 }
 .habit-trend-up { background: #dcfce7; color: #16a34a; }
-.habit-trend-down { background: #fee2e2; color: #dc2626; }
+.habit-trend-down { background: #fee2e2; color: var(--color-error); }
 .habit-trend-same { background: #f1f5f9; color: var(--color-text-muted); }
 .habit-trend-arrow { font-size: 1.1rem; font-weight: 700; }
 
@@ -514,16 +514,16 @@
    ================================================================ */
 [data-theme="dark"] .habit-toggle:hover,
 [data-theme="dark"] .habit-empty:hover { background: #334155; }
-[data-theme="dark"] .habit-done { background: rgba(74, 222, 128, 0.16); color: #4ade80; }
+[data-theme="dark"] .habit-done { background: var(--tint-green-bg); color: var(--tint-green-text); }
 [data-theme="dark"] .habit-done:hover { background: rgba(74, 222, 128, 0.25); }
-[data-theme="dark"] .habit-partial { background: rgba(251, 191, 36, 0.14); color: #fbbf24; }
+[data-theme="dark"] .habit-partial { background: var(--tint-amber-bg); color: var(--tint-amber-text); }
 [data-theme="dark"] .habit-partial:hover { background: rgba(251, 191, 36, 0.22); }
-[data-theme="dark"] .habit-missed { background: rgba(248, 113, 113, 0.16); color: #ef4444; }
+[data-theme="dark"] .habit-missed { background: var(--tint-red-bg); color: var(--color-error); }
 [data-theme="dark"] .habit-missed:hover { background: rgba(248, 113, 113, 0.25); }
-[data-theme="dark"] .habit-streak-active { color: #fbbf24; }
-[data-theme="dark"] .habit-goal-met { color: #4ade80; }
-[data-theme="dark"] .habit-summary-best { color: #4ade80; }
-[data-theme="dark"] .habit-summary-attention { color: #fbbf24; }
+[data-theme="dark"] .habit-streak-active { color: var(--tint-amber-text); }
+[data-theme="dark"] .habit-goal-met { color: var(--tint-green-text); }
+[data-theme="dark"] .habit-summary-best { color: var(--tint-green-text); }
+[data-theme="dark"] .habit-summary-attention { color: var(--tint-amber-text); }
 
 /* Dark: Day View */
 [data-theme="dark"] .habit-day-item-done { background: rgba(74, 222, 128, 0.12); border-color: rgba(74, 222, 128, 0.3); }
@@ -533,13 +533,13 @@
 [data-theme="dark"] .habit-day-check { background: var(--color-bg); border-color: var(--color-border); }
 [data-theme="dark"] .habit-day-item-done .habit-day-check { background: #16a34a; border-color: #16a34a; }
 [data-theme="dark"] .habit-day-item-partial .habit-day-check { background: #ca8a04; border-color: #ca8a04; }
-[data-theme="dark"] .habit-day-item-missed .habit-day-check { background: #dc2626; border-color: #dc2626; }
+[data-theme="dark"] .habit-day-item-missed .habit-day-check { background: var(--color-error); border-color: var(--color-error); }
 
 /* Dark: Month View */
-[data-theme="dark"] .habit-rate-high { background: rgba(74, 222, 128, 0.16); }
-[data-theme="dark"] .habit-rate-mid { background: rgba(251, 191, 36, 0.14); }
+[data-theme="dark"] .habit-rate-high { background: var(--tint-green-bg); }
+[data-theme="dark"] .habit-rate-mid { background: var(--tint-amber-bg); }
 [data-theme="dark"] .habit-rate-low { background: rgba(248, 113, 113, 0.14); }
-[data-theme="dark"] .habit-rate-zero { background: rgba(148, 163, 184, 0.1); }
+[data-theme="dark"] .habit-rate-zero { background: var(--tint-gray-bg); }
 [data-theme="dark"] .habit-rate-none { background: transparent; }
 
 /* Dark: Year mini month */
@@ -552,19 +552,19 @@
 [data-theme="dark"] .habit-year-mini-perfect { border-color: rgba(74, 222, 128, 0.5); box-shadow: 0 0 3px rgba(74, 222, 128, 0.3); }
 
 /* Dark: Month streaks & celebration */
-[data-theme="dark"] .habit-month-perfect { background: linear-gradient(135deg, rgba(74, 222, 128, 0.16) 0%, rgba(74, 222, 128, 0.08) 100%); border-color: rgba(74, 222, 128, 0.3); }
-[data-theme="dark"] .habit-month-perfect-banner { background: linear-gradient(135deg, rgba(251, 191, 36, 0.12) 0%, rgba(74, 222, 128, 0.12) 100%); border-color: rgba(74, 222, 128, 0.3); color: #4ade80; }
+[data-theme="dark"] .habit-month-perfect { background: linear-gradient(135deg, var(--tint-green-bg) 0%, rgba(74, 222, 128, 0.08) 100%); border-color: rgba(74, 222, 128, 0.3); }
+[data-theme="dark"] .habit-month-perfect-banner { background: linear-gradient(135deg, rgba(251, 191, 36, 0.12) 0%, rgba(74, 222, 128, 0.12) 100%); border-color: rgba(74, 222, 128, 0.3); color: var(--tint-green-text); }
 [data-theme="dark"] .habit-month-streaks { background: var(--color-bg); border-color: var(--color-border); }
 [data-theme="dark"] .habit-month-streak-badge { background: var(--color-surface); border-color: var(--color-border); }
-[data-theme="dark"] .habit-month-streak-count { color: #fbbf24; }
-[data-theme="dark"] .habit-month-streak-perfect { color: #4ade80; }
+[data-theme="dark"] .habit-month-streak-count { color: var(--tint-amber-text); }
+[data-theme="dark"] .habit-month-streak-perfect { color: var(--tint-green-text); }
 
 /* Dark: Trend */
-[data-theme="dark"] .habit-trend-up { background: rgba(74, 222, 128, 0.12); color: #4ade80; }
-[data-theme="dark"] .habit-trend-down { background: rgba(248, 113, 113, 0.12); color: #ef4444; }
-[data-theme="dark"] .habit-trend-same { background: rgba(148, 163, 184, 0.1); }
+[data-theme="dark"] .habit-trend-up { background: rgba(74, 222, 128, 0.12); color: var(--tint-green-text); }
+[data-theme="dark"] .habit-trend-down { background: rgba(248, 113, 113, 0.12); color: var(--color-error); }
+[data-theme="dark"] .habit-trend-same { background: var(--tint-gray-bg); }
 
 /* Dark: Add/Upgrade buttons */
-[data-theme="dark"] .habit-add-week-btn { border-color: #fbbf24; color: #fbbf24; }
-[data-theme="dark"] .habit-add-week-btn:hover { background: #fbbf24; color: #1e293b; }
-[data-theme="dark"] .habit-upgrade-btn:hover { border-color: #fbbf24; color: #fbbf24; }
+[data-theme="dark"] .habit-add-week-btn { border-color: var(--tint-amber-text); color: var(--tint-amber-text); }
+[data-theme="dark"] .habit-add-week-btn:hover { background: var(--tint-amber-text); color: #1e293b; }
+[data-theme="dark"] .habit-upgrade-btn:hover { border-color: var(--tint-amber-text); color: var(--tint-amber-text); }

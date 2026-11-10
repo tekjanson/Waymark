@@ -46,6 +46,22 @@
   --color-success: var(--green);
 }
 
+/* When a custom Appearance theme is enabled, it must override the Wayboard's
+   mode palette too (widgets, wayside, cards, menus) instead of only coloring
+   non-home views. */
+html[data-wm-palette="custom"] #wayboard-root {
+  --bg: var(--wm-bg);
+  --panel: var(--wm-panel);
+  --card: var(--wm-card);
+  --border: var(--wm-border);
+  --accent: var(--wm-accent);
+  --green: var(--wm-green, var(--wm-accent));
+  --text: var(--wm-text);
+  --muted: var(--wm-muted);
+  --radius: var(--wm-radius, 8px);
+  --font: var(--wm-font, system-ui, -apple-system, sans-serif);
+}
+
 #wayboard-root .workspace { display: flex; flex: 1; overflow: hidden; position: relative; transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
 #wayboard-root main.canvas { flex: 1; padding: 18px 22px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; position: relative; transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
 #wayboard-root .greeting-banner { background: var(--panel); border: 1px solid var(--border); padding: 12px 18px; border-radius: var(--radius); display: flex; justify-content: space-between; align-items: center; transition: all 0.35s; }
@@ -54,8 +70,8 @@
 #wayboard-root .home-greeting h2,
 #wayboard-root #home-greeting-text { color: var(--text); }
 #wayboard-root .home-greeting-sub { color: var(--muted); }
-#wayboard-root .badge { font-size: 10px; padding: 3px 8px; border-radius: 99px; background: rgba(16,185,129,0.15); color: var(--green); font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
-#wayboard-root .badge.blue { background: rgba(59,130,246,0.15); color: var(--accent); }
+#wayboard-root .badge { font-size: 10px; padding: 3px 8px; border-radius: 99px; background: color-mix(in srgb, var(--green) 15%, transparent); color: var(--green); font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
+#wayboard-root .badge.blue { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
 #wayboard-root .section-head { display: flex; justify-content: space-between; align-items: center; font-size: 10px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 8px; }
 #wayboard-root .markers-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; transition: all 0.35s; }
 #wayboard-root .marker-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; cursor: pointer; transition: all 0.25s; display: flex; flex-direction: column; position: relative; }
@@ -63,7 +79,7 @@
 #wayboard-root .wayboard-widget-quickmarks .home-action-card { width: 100%; min-width: 0; padding: 8px 6px; gap: 6px; }
 #wayboard-root .wayboard-widget-quickmarks .marker-meta { min-width: 0; width: 100%; }
 #wayboard-root .wayboard-widget-quickmarks .home-action-label { overflow-wrap: anywhere; }
-#wayboard-root .marker-thumb { height: 52px; background: linear-gradient(135deg, rgba(59,130,246,0.22), rgba(236,72,153,0.22)); display: flex; align-items: center; justify-content: center; font-size: 22px; transition: all 0.3s; }
+#wayboard-root .marker-thumb { height: 52px; background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 24%, transparent), color-mix(in srgb, var(--green) 24%, transparent)); display: flex; align-items: center; justify-content: center; font-size: 22px; transition: all 0.3s; }
 #wayboard-root .marker-meta { padding: 9px; font-size: 11px; font-weight: 600; flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
 #wayboard-root .marker-social { display: flex; justify-content: space-between; font-size: 9px; color: var(--muted); margin-top: 5px; }
 #wayboard-root .wayboard-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; flex: 1; transition: all 0.35s; }
@@ -74,10 +90,10 @@
 #wayboard-root .crew-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; background: var(--card); border-radius: 7px; margin-top: 5px; font-size: 11px; cursor: pointer; border: 1px solid transparent; }
 #wayboard-root .crew-row.active,
 #wayboard-root .crew-row:hover { border-color: var(--accent); }
-#wayboard-root .share-chip { font-size: 9px; color: var(--accent); background: rgba(59,130,246,0.15); padding: 2px 5px; border-radius: 4px; }
+#wayboard-root .share-chip { font-size: 9px; color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); padding: 2px 5px; border-radius: 4px; }
 #wayboard-root .avatar-row { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
 #wayboard-root .avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--card); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 10px; cursor: pointer; border: 2px solid var(--green); }
-#wayboard-root .avatar-ai { border-color: var(--accent); background: rgba(59,130,246,0.12); font-size: 14px; }
+#wayboard-root .avatar-ai { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); font-size: 14px; }
 #wayboard-root .chat-box { margin-top: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; line-height: 1.4; flex: 1 1 auto; height: clamp(240px, 42vh, 560px); min-height: 220px; max-height: 80vh; resize: vertical; overflow: auto; }
 #wayboard-root .chat-log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
 
@@ -108,7 +124,7 @@
 #wayboard-root.mode-9 { --bg:#0d0b12; --panel:#15121d; --card:#1c1827; --border:#2d2740; --accent:#a855f7; --radius:16px; }
 #wayboard-root.mode-10 { --bg:#0b1020; --panel:#111833; --card:#16203f; --border:#243357; --accent:#60a5fa; --radius:14px; }
 #wayboard-root.mode-11 { --bg:#faf7f0; --panel:#fffdf8; --card:#fffdf8; --border:#e6ddc9; --text:#211c13; --muted:#6f6552; --accent:#b45309; --radius:6px; --font: Georgia, 'Times New Roman', serif; }
-#wayboard-root.mode-12 { --bg:#060708; --panel:#0c0e10; --card:#111417; --border:#20262c; --accent:#f59e0b; --green:#22c55e; --text:#e8edf2; --muted:#7a8894; --radius:3px; --font:'JetBrains Mono', ui-monospace, monospace; }
+#wayboard-root.mode-12 { --bg:#060708; --panel:#0c0e10; --card:#111417; --border:#1a2a1d; --accent:#39ff14; --green:#39ff14; --text:#d9ffd2; --muted:#81d78f; --radius:3px; --font:'JetBrains Mono', ui-monospace, monospace; }
 
 /* ---------- Desktop layouts (>= 769px) ---------- */
 @media (min-width: 769px) {
@@ -254,7 +270,7 @@
 #wayboard-root .chat-box-head { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 3px; }
 #wayboard-root .chat-box-actions { display: flex; gap: 3px; }
 #wayboard-root .chat-box-actions .btn { padding: 2px 6px; font-size: 9px; }
-#wayboard-root .btn-muted { background: #334155; }
+#wayboard-root .btn-muted { background: var(--border); }
 #wayboard-root .chat-sheet-line { font-size: 9px; color: var(--accent); }
 #wayboard-root .chat-input { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 6px; font-size: 12px; }
 #wayboard-root .chat-log { overflow-wrap: anywhere; min-height: 80px; }
@@ -292,7 +308,7 @@
 /* Wayside unified chat container & embedded widget adjustments */
 #wayboard-root .wayside-chat-container { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 220px; }
 #wayboard-root .chat-box.social-chat-embedded { padding: 0; overflow: hidden; display: flex; flex-direction: column; gap: 0; }
-#wayboard-root .social-chat-embedded .chat-sheet-line { padding: 4px 10px; background: rgba(0,0,0,0.05); }
+#wayboard-root .social-chat-embedded .chat-sheet-line { padding: 4px 10px; background: color-mix(in srgb, var(--text) 5%, transparent); }
 #wayboard-root .social-chat-embedded .social-chat-messages { padding: 8px 10px; flex: 1; }
 #wayboard-root .social-chat-embedded .social-chat-input-bar { padding: 8px 10px; }
 #wayboard-root .social-chat-embedded .social-call-bar { padding: 6px 10px; }
@@ -424,24 +440,24 @@
   border-radius: 6px;
   font-size: 0.78rem;
   line-height: 1.4;
-  background: rgba(59, 130, 246, 0.08);
+  background: var(--tint-blue-bg);
   color: var(--color-text, #1e293b);
-  border: 1px solid rgba(59, 130, 246, 0.25);
+  border: 1px solid color-mix(in srgb, var(--tint-blue-text) 35%, transparent);
 }
 .wayside-oauth-tunnel-status.is-success {
-  background: rgba(16, 185, 129, 0.12);
-  border-color: rgba(16, 185, 129, 0.35);
+  background: var(--tint-green-bg);
+  border-color: color-mix(in srgb, var(--tint-green-text) 35%, transparent);
 }
 .wayside-oauth-tunnel-status.is-error {
-  background: rgba(239, 68, 68, 0.12);
-  border-color: rgba(239, 68, 68, 0.35);
+  background: var(--tint-red-bg);
+  border-color: color-mix(in srgb, var(--color-error) 35%, transparent);
 }
 div#wayboard-root .wayside-placeholder { display: flex; flex-direction: column; text-align: center; justify-content: center; align-items: center; }
 
 /* ---------- App light / dark theme applies to the neutral Command Center
    layout (mode-1); every other layout keeps its own fixed palette so the
    choice is actually visible. ---------- */
-html[data-theme="light"] #wayboard-root.mode-1 {
+html[data-theme="light"]:not([data-wm-palette="custom"]) #wayboard-root.mode-1 {
   --bg: #f4f7fb;
   --panel: #ffffff;
   --card: #ffffff;
@@ -452,7 +468,7 @@ html[data-theme="light"] #wayboard-root.mode-1 {
   color-scheme: light;
 }
 
-html[data-theme="dark"] #wayboard-root.mode-1 {
+html[data-theme="dark"]:not([data-wm-palette="custom"]) #wayboard-root.mode-1 {
   --bg: #0f172a;
   --panel: #1e293b;
   --card: #202b3b;
@@ -763,4 +779,3 @@ html[data-theme] #wayboard-root .btn-muted {
   #wayboard-root#wayboard-root .wayboard-data-row { padding: 8px; }
   #wayboard-root#wayboard-root .wayboard-metric { padding: 8px; }
 }
-

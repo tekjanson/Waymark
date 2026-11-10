@@ -170,7 +170,7 @@
 }
 
 .party-card-caret {
-  color: var(--color-muted, #94a3b8);
+  color: var(--color-muted, var(--tint-gray-text));
   font-size: 0.8rem;
   width: 12px;
 }
@@ -221,7 +221,7 @@
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--color-muted, #94a3b8);
+  color: var(--color-muted, var(--tint-gray-text));
   font-size: 0.6rem;
   line-height: 1;
   padding: 1px 4px;
@@ -247,8 +247,8 @@
 }
 
 .party-bar-low { background: #f43f5e; }
-.party-bar-mid { background: #f59e0b; }
-.party-bar-high { background: #3b82f6; }
+.party-bar-mid { background: var(--tint-amber-text); }
+.party-bar-high { background: var(--color-primary); }
 .party-bar-done { background: var(--color-success); }
 
 /* ---------- Card body / items ---------- */
@@ -294,7 +294,7 @@
   font-size: 0.62rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--color-muted, #94a3b8);
+  color: var(--color-muted, var(--tint-gray-text));
 }
 
 .party-cell-input {
@@ -370,7 +370,7 @@
 
 .party-empty {
   padding: 16px 4px;
-  color: var(--color-muted, #94a3b8);
+  color: var(--color-muted, var(--tint-gray-text));
   font-size: 0.9rem;
   text-align: center;
 }
@@ -440,7 +440,7 @@
 
 .party-link-type {
   font-size: 0.72rem;
-  color: var(--color-muted, #94a3b8);
+  color: var(--color-muted, var(--tint-gray-text));
 }
 
 .party-link-edit {
@@ -450,7 +450,7 @@
   cursor: pointer;
   padding: 0 12px;
   align-self: stretch;
-  color: var(--color-muted, #94a3b8);
+  color: var(--color-muted, var(--tint-gray-text));
 }
 
 .party-link-edit:hover { color: var(--color-text); }
@@ -499,7 +499,7 @@
   font-size: 1.4rem;
   line-height: 1;
   cursor: pointer;
-  color: var(--color-muted, #94a3b8);
+  color: var(--color-muted, var(--tint-gray-text));
 }
 
 .party-modal-body {

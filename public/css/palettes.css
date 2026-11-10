@@ -38,7 +38,7 @@ html[data-wm-palette="8"]  { --wm-bg:#05080a; --wm-panel:#0a1014; --wm-card:#0e1
 html[data-wm-palette="9"]  { --wm-bg:#0d0b12; --wm-panel:#15121d; --wm-card:#1c1827; --wm-border:#2d2740; --wm-accent:#a855f7; --wm-radius:16px; }
 html[data-wm-palette="10"] { --wm-bg:#0b1020; --wm-panel:#111833; --wm-card:#16203f; --wm-border:#243357; --wm-accent:#60a5fa; --wm-radius:14px; }
 html[data-wm-palette="11"] { --wm-bg:#faf7f0; --wm-panel:#fffdf8; --wm-card:#fffdf8; --wm-border:#e6ddc9; --wm-text:#211c13; --wm-muted:#6f6552; --wm-accent:#b45309; --wm-radius:6px; }
-html[data-wm-palette="12"] { --wm-bg:#060708; --wm-panel:#0c0e10; --wm-card:#111417; --wm-border:#20262c; --wm-accent:#f59e0b; --wm-green:#22c55e; --wm-text:#e8edf2; --wm-muted:#7a8894; --wm-radius:3px; }
+html[data-wm-palette="12"] { --wm-bg:#060708; --wm-panel:#0c0e10; --wm-card:#111417; --wm-border:#1a2a1d; --wm-accent:#39ff14; --wm-green:#39ff14; --wm-text:#d9ffd2; --wm-muted:#81d78f; --wm-radius:3px; }
 
 /* ---------- Global bridge: map the raw palette onto the app's design tokens ----------
    Applies to every palette. Descendant elements that reference --color-* (menus,

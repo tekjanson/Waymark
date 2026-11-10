@@ -43,7 +43,7 @@ test('switching the Profile palette re-themes the entire platform', async ({ pag
   expect(await tokenColor(page, '--color-primary')).toBe('rgb(59, 130, 246)');
 
   // Change the layout/palette through the Profile selector and confirm the whole
-  // app adopts the new accent (mode 12 — Matrix, amber #f59e0b).
+  // app adopts the new accent (mode 12 — Matrix, electric lime #39ff14).
   await page.evaluate(() => {
     const select = document.getElementById('settings-home-template');
     if (select) {
@@ -52,7 +52,7 @@ test('switching the Profile palette re-themes the entire platform', async ({ pag
     }
   });
   await expect(page.locator('html')).toHaveAttribute('data-wm-palette', '12');
-  expect(await tokenColor(page, '--color-primary')).toBe('rgb(245, 158, 11)');
+  expect(await tokenColor(page, '--color-primary')).toBe('rgb(57, 255, 20)');
 });
 
 test('the Wayboard keeps its layout mode class while theming globally', async ({ page }) => {

@@ -38,7 +38,7 @@ export const PALETTES = {
   9:  { name: 'Gallery',       base: 'dark',  bg: '#0d0b12', surface: '#1c1827', accent: '#a855f7', text: '#f0f6fc', muted: '#8b949e', border: '#2d2740', success: '#10b981', radius: 16, font: 'system' },
   10: { name: 'Canvas',        base: 'dark',  bg: '#0b1020', surface: '#16203f', accent: '#60a5fa', text: '#f0f6fc', muted: '#8b949e', border: '#243357', success: '#10b981', radius: 14, font: 'system' },
   11: { name: 'Editorial',     base: 'light', bg: '#faf7f0', surface: '#fffdf8', accent: '#b45309', text: '#211c13', muted: '#6f6552', border: '#e6ddc9', success: '#10b981', radius: 6,  font: 'serif' },
-  12: { name: 'Matrix',        base: 'dark',  bg: '#060708', surface: '#111417', accent: '#f59e0b', text: '#e8edf2', muted: '#7a8894', border: '#20262c', success: '#22c55e', radius: 3,  font: 'mono' },
+  12: { name: 'Matrix',        base: 'dark',  bg: '#060708', surface: '#111417', accent: '#39ff14', text: '#d9ffd2', muted: '#81d78f', border: '#1a2a1d', success: '#39ff14', radius: 3,  font: 'mono' },
 };
 
 /* The editable fields a custom theme carries (besides `enabled`). */

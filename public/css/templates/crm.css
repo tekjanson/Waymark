@@ -18,7 +18,7 @@
 .crm-card-qualified { border-left-color: #d97706; }
 .crm-card-proposal { border-left-color: #7c3aed; }
 .crm-card-won { border-left-color: #16a34a; background: #f0fdf4; }
-.crm-card-lost { border-left-color: #dc2626; background: #fef2f2; opacity: 0.7; }
+.crm-card-lost { border-left-color: var(--color-error); background: #fef2f2; opacity: 0.7; }
 .crm-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .crm-card-company { font-weight: 600; font-size: 1rem; }
 .crm-card-value { font-weight: 700; color: #b45309; }
@@ -79,7 +79,7 @@
 .crm-funnel-lane-qualified .crm-funnel-lane-title { color: #d97706; }
 .crm-funnel-lane-proposal .crm-funnel-lane-title { color: #7c3aed; }
 .crm-funnel-lane-won .crm-funnel-lane-title { color: #16a34a; }
-.crm-funnel-lane-lost .crm-funnel-lane-title { color: #dc2626; }
+.crm-funnel-lane-lost .crm-funnel-lane-title { color: var(--color-error); }
 .crm-funnel-lane-won { background: #f0fdf4; }
 .crm-funnel-lane-lost { background: #fef2f2; opacity: 0.8; }
 
@@ -133,7 +133,7 @@
 
 /* ---------- Stale Deal ---------- */
 .crm-card-stale {
-  border-left-color: #ef4444 !important;
+  border-left-color: var(--color-error) !important;
   background: #fff7ed !important;
   opacity: 1 !important;
 }
@@ -142,11 +142,11 @@
   position: absolute;
   top: 0; right: 0;
   width: 0; height: 0;
-  border-top: 18px solid #ef4444;
+  border-top: 18px solid var(--color-error);
   border-left: 18px solid transparent;
 }
 .crm-card { position: relative; overflow: hidden; }
-.crm-stale-icon { color: #ef4444; margin-right: 4px; }
+.crm-stale-icon { color: var(--color-error); margin-right: 4px; }
 .crm-card-last-activity {
   font-size: 0.72rem;
   color: var(--color-text-muted);
@@ -157,7 +157,7 @@
 .crm-summary-stale {
   font-size: 0.78rem;
   font-weight: 600;
-  color: #ef4444;
+  color: var(--color-error);
   background: #fef2f2;
   padding: 2px 8px;
   border-radius: 8px;
@@ -224,7 +224,7 @@
   border: none;
   font-size: 1.1rem;
   cursor: pointer;
-  color: #94a3b8;
+  color: var(--tint-gray-text);
   padding: 2px 6px;
   border-radius: 4px;
 }
@@ -282,24 +282,24 @@
 }
 
 .crm-timeline-empty {
-  color: #94a3b8;
+  color: var(--tint-gray-text);
   font-style: italic;
   text-align: center;
   padding: 20px;
 }
 
 /* --- Dark Theme --- */
-[data-theme="dark"] .crm-summary-value { color: #fbbf24; }
+[data-theme="dark"] .crm-summary-value { color: var(--tint-amber-text); }
 [data-theme="dark"] .crm-summary-total,
 [data-theme="dark"] .crm-card-value,
 [data-theme="dark"] .crm-funnel-lane-value,
-[data-theme="dark"] .crm-funnel-deal-val { color: #fbbf24; }
-[data-theme="dark"] .crm-stage-lead { background: rgba(148, 163, 184, 0.1); color: #94a3b8; }
-[data-theme="dark"] .crm-stage-contacted { background: rgba(96, 165, 250, 0.16); color: #93c5fd; }
-[data-theme="dark"] .crm-stage-qualified { background: rgba(251, 191, 36, 0.14); color: #fcd34d; }
-[data-theme="dark"] .crm-stage-proposal { background: rgba(167, 139, 250, 0.16); color: #c4b5fd; }
-[data-theme="dark"] .crm-stage-won { background: rgba(74, 222, 128, 0.16); color: #4ade80; }
-[data-theme="dark"] .crm-stage-lost { background: rgba(248, 113, 113, 0.16); color: #fca5a5; }
+[data-theme="dark"] .crm-funnel-deal-val { color: var(--tint-amber-text); }
+[data-theme="dark"] .crm-stage-lead { background: var(--tint-gray-bg); color: var(--tint-gray-text); }
+[data-theme="dark"] .crm-stage-contacted { background: var(--tint-blue-bg); color: var(--tint-blue-text); }
+[data-theme="dark"] .crm-stage-qualified { background: var(--tint-amber-bg); color: var(--tint-amber-text); }
+[data-theme="dark"] .crm-stage-proposal { background: var(--tint-purple-bg); color: var(--tint-purple-text); }
+[data-theme="dark"] .crm-stage-won { background: var(--tint-green-bg); color: var(--tint-green-text); }
+[data-theme="dark"] .crm-stage-lost { background: var(--tint-red-bg); color: var(--tint-red-text); }
 [data-theme="dark"] .crm-funnel-won,
 [data-theme="dark"] .crm-funnel-lane-won { background: rgba(74, 222, 128, 0.1); }
 [data-theme="dark"] .crm-funnel-lost,
@@ -307,16 +307,16 @@
 [data-theme="dark"] .crm-card-won { background: rgba(74, 222, 128, 0.08); }
 [data-theme="dark"] .crm-card-lost { background: rgba(248, 113, 113, 0.08); }
 [data-theme="dark"] .crm-card-stale { background: rgba(251, 146, 60, 0.1) !important; }
-[data-theme="dark"] .crm-stale-deal { background: rgba(251, 146, 60, 0.12); border-color: #ef4444; }
+[data-theme="dark"] .crm-stale-deal { background: rgba(251, 146, 60, 0.12); border-color: var(--color-error); }
 [data-theme="dark"] .crm-stale-deal .crm-stale-icon,
 [data-theme="dark"] .crm-stale-deal .crm-stale-text { color: #fb923c; }
-[data-theme="dark"] .crm-view-toggle { color: #fbbf24; border-color: rgba(251, 191, 36, 0.3); }
-[data-theme="dark"] .crm-view-toggle:hover { background: rgba(251, 191, 36, 0.14); }
+[data-theme="dark"] .crm-view-toggle { color: var(--tint-amber-text); border-color: rgba(251, 191, 36, 0.3); }
+[data-theme="dark"] .crm-view-toggle:hover { background: var(--tint-amber-bg); }
 [data-theme="dark"] .crm-detail-modal { background: var(--color-surface); color: var(--color-text); }
 [data-theme="dark"] .crm-detail-overlay { background: rgba(0,0,0,0.6); }
 [data-theme="dark"] .crm-detail-header { background: var(--color-bg); border-color: var(--color-border); }
 [data-theme="dark"] .crm-detail-header-title { color: var(--color-text); }
-[data-theme="dark"] .crm-detail-close:hover { background: #334155; color: #94a3b8; }
+[data-theme="dark"] .crm-detail-close:hover { background: #334155; color: var(--tint-gray-text); }
 [data-theme="dark"] .crm-activity-bg { background: rgba(129, 140, 248, 0.12); }
 [data-theme="dark"] .crm-timeline-line { background: #334155; }
 [data-theme="dark"] .crm-timeline-dot { background: #818cf8; border-color: var(--color-surface); }

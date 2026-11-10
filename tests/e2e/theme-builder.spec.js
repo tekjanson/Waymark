@@ -36,6 +36,10 @@ test('theme builder renders 12 presets and 7 colour swatches', async ({ page }) 
   await expect(page.locator('#theme-presets .theme-preset')).toHaveCount(12);
   await expect(page.locator('#theme-swatches .theme-swatch')).toHaveCount(7);
   await expect(page.locator('#theme-color-accent')).toBeVisible();
+  await page.locator('.theme-advanced-summary').click();
+  await expect(page.locator('#theme-copy-code')).toBeVisible();
+  await expect(page.locator('#theme-apply-code')).toBeVisible();
+  await expect(page.locator('#theme-code')).toBeVisible();
 });
 
 test('enabling a preset in the builder themes the whole app via --color tokens', async ({ page }) => {
@@ -69,14 +73,14 @@ test('changing the accent colour updates the global token live', async ({ page }
 test('the custom theme persists across reload', async ({ page }) => {
   await setupApp(page);
   await openSettings(page);
-  await page.locator('.theme-preset[data-preset="12"]').click(); // Matrix — amber #f59e0b
-  expect(await tokenColor(page, '--color-primary')).toBe('rgb(245, 158, 11)');
+  await page.locator('.theme-preset[data-preset="12"]').click(); // Matrix — electric lime #39ff14
+  expect(await tokenColor(page, '--color-primary')).toBe('rgb(57, 255, 20)');
 
   // Reload — the anti-flash script + boot must restore the custom theme.
   await page.reload();
   await page.waitForSelector('#app-screen:not(.hidden)', { timeout: 10_000 });
   await expect(page.locator('html')).toHaveAttribute('data-wm-palette', 'custom');
-  expect(await tokenColor(page, '--color-primary')).toBe('rgb(245, 158, 11)');
+  expect(await tokenColor(page, '--color-primary')).toBe('rgb(57, 255, 20)');
 });
 
 test('the base toggle flips the custom theme between light and dark', async ({ page }) => {
@@ -93,6 +97,40 @@ test('the base toggle flips the custom theme between light and dark', async ({ p
   await expect(page.locator('html')).toHaveAttribute('data-wm-base', 'dark');
 });
 
+test('theme code can be pasted and applied as a custom theme', async ({ page }) => {
+  await setupApp(page);
+  await openSettings(page);
+  await page.locator('.theme-advanced-summary').click();
+
+  await page.locator('#theme-code').fill(JSON.stringify({
+    enabled: true,
+    base: 'dark',
+    bg: '#030706',
+    surface: '#0b1612',
+    accent: '#39ff14',
+    text: '#dbffd4',
+    muted: '#89d89a',
+    border: '#214b2b',
+    success: '#39ff14',
+    radius: 5,
+    font: 'mono',
+  }, null, 2));
+  await page.locator('#theme-apply-code').click();
+
+  await expect(page.locator('html')).toHaveAttribute('data-wm-palette', 'custom');
+  expect(await tokenColor(page, '--color-primary')).toBe('rgb(57, 255, 20)');
+  expect(await tokenColor(page, '--color-bg', 'background-color')).toBe('rgb(3, 7, 6)');
+});
+
+test('load active layout palette seeds the builder and enables custom theme', async ({ page }) => {
+  await setupApp(page, { homeTemplateMode: 8 });
+  await openSettings(page);
+
+  await page.locator('#theme-load-layout-preset').click();
+  await expect(page.locator('html')).toHaveAttribute('data-wm-palette', 'custom');
+  expect(await tokenColor(page, '--color-primary')).toBe('rgb(34, 211, 238)');
+});
+
 test('Reset to preset turns the custom theme off and restores the layout palette', async ({ page }) => {
   await setupApp(page, { homeTemplateMode: 1 }); // Command Center — blue #3b82f6
   await openSettings(page);
@@ -103,4 +141,60 @@ test('Reset to preset turns the custom theme off and restores the layout palette
   await expect(page.locator('#settings-theme-custom-enabled')).not.toBeChecked();
   await expect(page.locator('html')).toHaveAttribute('data-wm-palette', '1');
   expect(await tokenColor(page, '--color-primary')).toBe('rgb(59, 130, 246)');
+});
+
+test('custom theme also skins Wayboard widgets and wayside surfaces', async ({ page }) => {
+  await setupApp(page, { homeTemplateMode: 1 });
+  await openSettings(page);
+  await page.locator('#settings-theme-custom-enabled').check();
+  await page.evaluate(() => {
+    const input = /** @type {HTMLInputElement} */ (document.getElementById('theme-color-accent'));
+    input.value = '#39ff14';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await page.locator('#settings-modal-close').click();
+  await page.waitForSelector('#wayboard-root', { timeout: 5_000 });
+
+  const wayboardAccent = await page.evaluate(() => {
+    const root = document.getElementById('wayboard-root');
+    if (!root) return '';
+    return getComputedStyle(root).getPropertyValue('--accent').trim();
+  });
+  expect(wayboardAccent).toBe('#39ff14');
+
+  const chipBg = await page.evaluate(() => {
+    const chip = document.querySelector('#wayboard-root .share-chip');
+    if (!chip) return '';
+    return getComputedStyle(chip).backgroundColor;
+  });
+  expect(chipBg).not.toBe('rgba(0, 0, 0, 0)');
+});
+
+test('custom theme overrides mode-1 light/dark fallback on Wayboard', async ({ page }) => {
+  await setupApp(page, { homeTemplateMode: 1 });
+  await openSettings(page);
+  await page.locator('#settings-theme-custom-enabled').check();
+  await page.evaluate(() => {
+    const setColor = (id, value) => {
+      const input = /** @type {HTMLInputElement} */ (document.getElementById(id));
+      input.value = value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    setColor('theme-color-bg', '#020f08');
+    setColor('theme-color-accent', '#39ff14');
+  });
+  await page.locator('#settings-modal-close').click();
+  await page.waitForSelector('#wayboard-root', { timeout: 5_000 });
+
+  const wayboardVars = await page.evaluate(() => {
+    const root = document.getElementById('wayboard-root');
+    if (!root) return { bg: '', accent: '' };
+    const styles = getComputedStyle(root);
+    return {
+      bg: styles.getPropertyValue('--bg').trim(),
+      accent: styles.getPropertyValue('--accent').trim(),
+    };
+  });
+  expect(wayboardVars.bg).toBe('#020f08');
+  expect(wayboardVars.accent).toBe('#39ff14');
 });

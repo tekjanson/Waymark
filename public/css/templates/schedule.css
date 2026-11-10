@@ -51,4 +51,4 @@
 /* --- Dark Theme --- */
 [data-theme="dark"] .schedule-today-btn:hover { color: #fff; }
 [data-theme="dark"] .schedule-conflict { background: rgba(248, 113, 113, 0.1); }
-[data-theme="dark"] .schedule-conflict-badge { background: rgba(248, 113, 113, 0.16); }
+[data-theme="dark"] .schedule-conflict-badge { background: var(--tint-red-bg); }

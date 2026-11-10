@@ -20,10 +20,10 @@
   border: 1px solid var(--color-border);
 }
 
-.worker-stat-running   { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
+.worker-stat-running   { background: #dbeafe; color: #1e40af; border-color: var(--tint-blue-text); }
 .worker-stat-done      { background: #dcfce7; color: #166534; border-color: #86efac; }
-.worker-stat-failed    { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
-.worker-stat-scheduled { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+.worker-stat-failed    { background: #fee2e2; color: #991b1b; border-color: var(--tint-red-text); }
+.worker-stat-scheduled { background: #fef3c7; color: #92400e; border-color: var(--tint-amber-text); }
 
 /* Job grid */
 .worker-grid {
@@ -53,10 +53,10 @@
 }
 
 /* Status-tinted left border */
-.worker-card-running   { border-left: 3px solid #3b82f6; }
-.worker-card-done      { border-left: 3px solid #22c55e; }
-.worker-card-failed    { border-left: 3px solid #ef4444; }
-.worker-card-scheduled { border-left: 3px solid #f59e0b; }
+.worker-card-running   { border-left: 3px solid var(--color-primary); }
+.worker-card-done      { border-left: 3px solid var(--color-success); }
+.worker-card-failed    { border-left: 3px solid var(--color-error); }
+.worker-card-scheduled { border-left: 3px solid var(--tint-amber-text); }
 .worker-card-pending   { border-left: 3px solid var(--color-border); }
 
 /* Card header */
@@ -98,10 +98,10 @@
 .worker-status-badge:hover { opacity: 0.85; }
 
 .worker-status-pending   { background: var(--color-surface-2); color: var(--color-text-muted); border-color: var(--color-border); }
-.worker-status-running   { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
+.worker-status-running   { background: #dbeafe; color: #1e40af; border-color: var(--tint-blue-text); }
 .worker-status-done      { background: #dcfce7; color: #166534; border-color: #86efac; }
-.worker-status-failed    { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
-.worker-status-scheduled { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+.worker-status-failed    { background: #fee2e2; color: #991b1b; border-color: var(--tint-red-text); }
+.worker-status-scheduled { background: #fef3c7; color: #92400e; border-color: var(--tint-amber-text); }
 
 /* Handler badge & schedule */
 .worker-card-meta {

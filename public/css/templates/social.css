@@ -367,10 +367,10 @@
   border-radius: 50%;
   flex-shrink: 0;
 }
-.social-chat-status-listening { background: #fbbf24; }
+.social-chat-status-listening { background: var(--tint-amber-text); }
 .social-chat-status-pairing { background: #f97316; }
-.social-chat-status-connected { background: #22c55e; }
-.social-chat-status-disconnected { background: #ef4444; }
+.social-chat-status-connected { background: var(--color-success); }
+.social-chat-status-disconnected { background: var(--color-error); }
 
 .social-chat-peer-count {
   margin-left: auto;
@@ -634,11 +634,11 @@
 .social-call-btn.hidden { display: none; }
 
 .social-call-btn-hangup {
-  background: #ef4444;
+  background: var(--color-error);
   color: #fff;
-  border-color: #ef4444;
+  border-color: var(--color-error);
 }
-.social-call-btn-hangup:hover { background: #dc2626; }
+.social-call-btn-hangup:hover { background: var(--color-error); }
 
 /* Media container */
 .social-media-container {
@@ -744,7 +744,7 @@
   position: absolute;
   top: 0; left: 0; bottom: 0;
   width: 0%;
-  background: #22c55e;
+  background: var(--color-success);
   border-radius: 4px;
   transition: width 0.08s linear;
 }
@@ -772,7 +772,7 @@
 .social-debug-btn.social-debug-btn-active {
   background: rgba(139, 92, 246, 0.2);
   border-color: #8b5cf6;
-  color: #c4b5fd;
+  color: var(--tint-purple-text);
 }
 
 /* Event log */
@@ -853,7 +853,7 @@
   height: 18px;
   padding: 0 5px;
   border-radius: 9px;
-  background: #ef4444;
+  background: var(--color-error);
   color: #fff;
   font-size: 0.65rem;
   font-weight: 700;
@@ -1000,7 +1000,7 @@
 }
 
 .social-incoming-accept {
-  background: #22c55e;
+  background: var(--color-success);
   color: #fff;
 }
 .social-incoming-accept-video {
@@ -1008,7 +1008,7 @@
   color: #fff;
 }
 .social-incoming-decline {
-  background: #ef4444;
+  background: var(--color-error);
   color: #fff;
 }
 

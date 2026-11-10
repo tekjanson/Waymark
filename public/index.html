@@ -375,6 +375,23 @@
                 <div class="theme-presets" id="theme-presets" aria-label="Theme presets"></div>
               </div>
 
+              <div class="theme-builder-field">
+                  <span class="settings-sublabel">Quick actions</span>
+                <div class="theme-builder-toolbar">
+                  <button type="button" id="theme-load-layout-preset" class="btn btn-secondary btn-sm">Load active layout palette</button>
+                  </div>
+                </div>
+
+                <details class="theme-advanced">
+                  <summary class="theme-advanced-summary">Advanced import/export</summary>
+                  <div class="theme-builder-toolbar">
+                    <button type="button" id="theme-copy-code" class="btn btn-secondary btn-sm">Copy theme code</button>
+                    <button type="button" id="theme-apply-code" class="btn btn-secondary btn-sm">Apply pasted code</button>
+                  </div>
+                  <textarea id="theme-code" class="theme-code" rows="4" spellcheck="false" aria-label="Theme JSON code"></textarea>
+                  <p class="settings-hint settings-hint-compact">Paste or copy a full custom theme JSON object to move themes between workspaces quickly.</p>
+                </details>
+
               <div id="theme-builder-body" class="theme-builder-body">
                 <div class="settings-row">
                   <span class="settings-label">Base</span>
@@ -413,6 +430,17 @@
                     </div>
                     <p class="theme-preview-text">The quick brown fox jumps over the lazy dog.</p>
                     <p class="theme-preview-muted">Muted secondary text · <span class="theme-preview-link">a link</span></p>
+                  </div>
+                </div>
+
+                <div class="theme-contrast" id="theme-contrast" aria-live="polite">
+                  <div class="theme-contrast-row">
+                    <span class="theme-contrast-label">Text on background</span>
+                    <span class="theme-contrast-value" id="theme-contrast-text-bg">—</span>
+                  </div>
+                  <div class="theme-contrast-row">
+                    <span class="theme-contrast-label">Accent on background</span>
+                    <span class="theme-contrast-value" id="theme-contrast-accent-bg">—</span>
                   </div>
                 </div>
 

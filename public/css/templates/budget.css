@@ -42,12 +42,12 @@
   background: var(--color-bg); border: 1px solid var(--color-border);
 }
 .budget-rate-fill { display: block; height: 100%; transition: width var(--transition); }
-.budget-rate-burn { background: #dc2626; }
+.budget-rate-burn { background: var(--color-error); }
 .budget-rate-save { background: #059669; }
 .budget-income .budget-summary-value { color: #059669; }
-.budget-expense .budget-summary-value { color: #dc2626; }
+.budget-expense .budget-summary-value { color: var(--color-error); }
 .budget-positive .budget-summary-value { color: #059669; }
-.budget-negative .budget-summary-value { color: #dc2626; }
+.budget-negative .budget-summary-value { color: var(--color-error); }
 .budget-category-label {
   display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;
   font-weight: 600; font-size: 0.85rem; color: #059669;
@@ -64,9 +64,9 @@
 .budget-envelope-fill { display: block; height: 100%; max-width: 100%; transition: width var(--transition); }
 .budget-envelope-green .budget-envelope-fill { background: #059669; }
 .budget-envelope-amber .budget-envelope-fill { background: #d97706; }
-.budget-envelope-red .budget-envelope-fill { background: #dc2626; }
-.budget-category-over { color: #dc2626; }
-.budget-category-over .budget-category-subtotal { color: #dc2626; }
+.budget-envelope-red .budget-envelope-fill { background: var(--color-error); }
+.budget-category-over { color: var(--color-error); }
+.budget-category-over .budget-category-subtotal { color: var(--color-error); }
 .budget-row {
   display: flex; align-items: center; gap: 12px;
   padding: 10px 16px; background: var(--color-surface);
@@ -119,14 +119,14 @@
   display: flex; align-items: center; gap: 4px;
   font-size: 0.72rem; color: var(--color-text-muted);
 }
-.budget-chart-legend-over { font-weight: 700; color: #dc2626; }
+.budget-chart-legend-over { font-weight: 700; color: var(--color-error); }
 .budget-chart-swatch {
   display: inline-block; width: 10px; height: 10px;
   border-radius: 2px; flex-shrink: 0;
 }
 .budget-chart-over-badge {
   font-size: 0.6rem; font-weight: 700; color: #fff;
-  background: #dc2626; padding: 0 4px; border-radius: 4px;
+  background: var(--color-error); padding: 0 4px; border-radius: 4px;
   text-transform: uppercase;
 }
 
@@ -153,7 +153,7 @@
 }
 .budget-dir-total-value { display: block; font-size: 1.3rem; font-weight: 700; }
 .budget-dir-income { color: #059669; }
-.budget-dir-expense { color: #dc2626; }
+.budget-dir-expense { color: var(--color-error); }
 
 /* Trend chart */
 .budget-dir-chart {
@@ -183,13 +183,13 @@
   cursor: pointer; transition: all var(--transition);
 }
 .budget-dir-card:hover { border-color: var(--color-primary); transform: translateY(-2px); box-shadow: var(--shadow); }
-.budget-dir-card-negative { border-left: 3px solid #dc2626; }
+.budget-dir-card-negative { border-left: 3px solid var(--color-error); }
 .budget-dir-card-name { font-weight: 600; font-size: 0.95rem; margin-bottom: 6px; }
 .budget-dir-card-stats {
   display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 4px;
 }
 .budget-dir-card-income { color: #059669; font-weight: 500; }
-.budget-dir-card-expense { color: #dc2626; font-weight: 500; }
+.budget-dir-card-expense { color: var(--color-error); font-weight: 500; }
 .budget-dir-card-balance { font-size: 0.85rem; font-weight: 700; }
 
 @media (max-width: 480px) {
@@ -211,13 +211,13 @@
 [data-theme="dark"] .budget-negative,
 [data-theme="dark"] .budget-category-over,
 [data-theme="dark"] .budget-dir-expense,
-[data-theme="dark"] .budget-dir-card-expense { color: #ef4444; }
-[data-theme="dark"] .budget-amt-positive { background: rgba(74, 222, 128, 0.16); color: #4ade80; }
-[data-theme="dark"] .budget-amt-negative { background: rgba(248, 113, 113, 0.16); color: #fca5a5; }
+[data-theme="dark"] .budget-dir-card-expense { color: var(--color-error); }
+[data-theme="dark"] .budget-amt-positive { background: var(--tint-green-bg); color: var(--tint-green-text); }
+[data-theme="dark"] .budget-amt-negative { background: var(--tint-red-bg); color: var(--tint-red-text); }
 [data-theme="dark"] .budget-dir-bar-income { background: #059669; }
-[data-theme="dark"] .budget-dir-bar-expense { background: #dc2626; }
-[data-theme="dark"] .budget-dir-card-negative { border-left-color: #ef4444; }
-[data-theme="dark"] .budget-chart-legend-over { color: #ef4444; }
+[data-theme="dark"] .budget-dir-bar-expense { background: var(--color-error); }
+[data-theme="dark"] .budget-dir-card-negative { border-left-color: var(--color-error); }
+[data-theme="dark"] .budget-chart-legend-over { color: var(--color-error); }
 /* ---------- Upload Statement ---------- */
 .budget-actions {
   display: flex; gap: 8px; margin-bottom: 16px;
@@ -302,7 +302,7 @@
 }
 .budget-cashflow-fill { display: block; height: 100%; transition: width var(--transition); }
 .budget-cashflow-income { background: #059669; }
-.budget-cashflow-expense { background: #dc2626; }
+.budget-cashflow-expense { background: var(--color-error); }
 .budget-cashflow-value { text-align: right; font-weight: 700; }
 .budget-table-tools {
   position: sticky; top: 0; z-index: 1;
@@ -379,18 +379,18 @@
 [data-theme="dark"] .budget-upload-btn:hover { background: rgba(5, 150, 105, 0.12); }
 [data-theme="dark"] .budget-upload-drop-zone:hover,
 [data-theme="dark"] .budget-upload-drop-active { background: rgba(5, 150, 105, 0.1); border-color: #34d399; }
-[data-theme="dark"] .budget-upload-status-success { background: rgba(74, 222, 128, 0.16); color: #4ade80; }
-[data-theme="dark"] .budget-upload-status-error { background: rgba(248, 113, 113, 0.16); color: #fca5a5; }
+[data-theme="dark"] .budget-upload-status-success { background: var(--tint-green-bg); color: var(--tint-green-text); }
+[data-theme="dark"] .budget-upload-status-error { background: var(--tint-red-bg); color: var(--tint-red-text); }
 
 /* ---------- PDF Column Mapping ---------- */
 .budget-upload-pdf-warning {
   padding: 10px 14px; margin-bottom: 12px;
   background: #fef3c7; color: #92400e;
-  border: 1px solid #fbbf24; border-radius: var(--radius-sm);
+  border: 1px solid var(--tint-amber-text); border-radius: var(--radius-sm);
   font-size: 0.85rem; font-weight: 500;
 }
 [data-theme="dark"] .budget-upload-pdf-warning {
-  background: rgba(251, 191, 36, 0.14); color: #fbbf24; border-color: rgba(251, 191, 36, 0.3);
+  background: var(--tint-amber-bg); color: var(--tint-amber-text); border-color: rgba(251, 191, 36, 0.3);
 }
 .budget-upload-mapping-table {
   border: 1px solid var(--color-border); border-radius: var(--radius);
