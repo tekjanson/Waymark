@@ -775,6 +775,47 @@ input#search-input::placeholder { color: var(--color-text-muted); }
 
 .notif-settings-cancel:hover { background: var(--color-bg); }
 
+/* ---------- Inline notification settings (Push Notification Sheet view) ---------- */
+.notif-settings-inline {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 8px 4px 32px;
+}
+
+.notif-settings-inline-header {
+  margin-bottom: 18px;
+}
+
+.notif-settings-inline-title {
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--color-heading, var(--color-text));
+  margin-bottom: 6px;
+}
+
+.notif-settings-inline .notif-settings-description {
+  margin: 0;
+  max-width: 70ch;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.notif-settings-inline .notif-settings-grid {
+  column-count: 2;
+  column-gap: 16px;
+}
+
+.notification-settings-pending-text {
+  color: var(--color-text-muted);
+  padding: 24px;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .notif-settings-inline .notif-settings-grid { column-count: 1; }
+}
+
 .notif-sheet-status {
   display: flex;
   flex-wrap: wrap;

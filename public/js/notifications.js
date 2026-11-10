@@ -902,18 +902,91 @@ function _openSettingsModal() {
 
   if (_panel) _panel.classList.add('hidden');
 
-  /* -- Built-in rule toggles -- */
+  const overlay = el('div', {
+    id: 'notif-settings-modal',
+    className: 'modal-overlay notif-settings-modal-overlay',
+    on: { click: (e) => { if (e.target === overlay) overlay.remove(); } },
+  }, []);
+
+  const { grid, save } = _buildSettingsUI({ inline: false, onClose: () => overlay.remove() });
+
+  const saveBtn = el('button', {
+    className: 'notif-settings-save',
+    on: { click: () => { save(); overlay.remove(); } },
+  }, ['Save']);
+
+  const modal = el('div', { className: 'modal notif-settings-modal' }, [
+    el('div', { className: 'modal-header notif-settings-modal-header' }, [
+      el('div', {}, [
+        el('h3', {}, ['🔔 Notification Settings']),
+        el('p', { className: 'modal-description notif-settings-description' }, [
+          'Control what can notify you, how updates are grouped, and which Waymarks can surface edit alerts.',
+        ]),
+      ]),
+      el('button', {
+        className: 'btn-icon notif-settings-close',
+        on: { click: () => overlay.remove() },
+      }, ['✕']),
+    ]),
+    el('div', { className: 'modal-body notif-settings-modal-body' }, [grid]),
+    el('div', { className: 'modal-footer notif-settings-footer' }, [
+      el('button', {
+        className: 'notif-settings-cancel',
+        on: { click: () => overlay.remove() },
+      }, ['Cancel']),
+      saveBtn,
+    ]),
+  ]);
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+}
+
+/**
+ * Build the shared notification-settings surface: a grid of section cards plus
+ * a save() function. Used by both the bell's settings modal and the inline
+ * notification-sheet template view, so the Push Notification Sheet view and the
+ * settings panel are literally the same UI.
+ *
+ * In inline mode every toggle auto-saves on change (no Save button) and the
+ * Push-sheet section is context-aware (connect/disconnect the sheet you are
+ * currently viewing). In modal mode a Save button commits all changes at once.
+ *
+ * @param {{ inline?: boolean, sheetId?: string, onClose?: () => void }} [opts]
+ * @returns {{ grid: HTMLElement, save: () => void }}
+ */
+function _buildSettingsUI(opts = {}) {
+  const inline = Boolean(opts.inline);
+  const viewingSheetId = opts.sheetId || '';
+  const onClose = typeof opts.onClose === 'function' ? opts.onClose : () => {};
+
   const saved = { ...DEFAULT_RULES, ...DEFAULT_COLLAB_PREFS, ...storage.getNotificationSettings() };
   const toggles = {};
   const collabToggles = {};
-  const ruleList = el('div', { className: 'notif-settings-rules' });
+  const waymarkToggles = {};
 
+  const save = () => {
+    const settings = {};
+    for (const [key, toggle] of Object.entries(toggles)) settings[key] = toggle.checked;
+    for (const [key, toggle] of Object.entries(collabToggles)) settings[key] = toggle.checked;
+    storage.setNotificationSettings(settings);
+    for (const [docId, toggle] of Object.entries(waymarkToggles)) {
+      storage.setWaymarkNotifPref(docId, { updates: toggle.checked });
+    }
+    document.dispatchEvent(new CustomEvent('waymark:notifications-changed'));
+  };
+
+  // Inline mode persists each change instantly so there is no Save step.
+  const wireAutoSave = (toggle) => { if (inline) toggle.addEventListener('change', save); };
+
+  /* -- Built-in rule toggles -- */
+  const ruleList = el('div', { className: 'notif-settings-rules' });
   for (const [key, meta] of Object.entries(RULE_LABELS)) {
     const toggleAttrs = { type: 'checkbox', className: 'notif-settings-toggle' };
     if (saved[key]) toggleAttrs.checked = 'checked';
     const toggle = el('input', toggleAttrs);
     toggles[key] = toggle;
-
+    wireAutoSave(toggle);
     ruleList.appendChild(el('label', { className: 'notif-settings-rule' }, [
       toggle,
       el('span', { className: 'notif-settings-rule-icon' }, [meta.icon]),
@@ -931,7 +1004,7 @@ function _openSettingsModal() {
     if (saved[key] !== false) toggleAttrs.checked = 'checked';
     const toggle = el('input', toggleAttrs);
     collabToggles[key] = toggle;
-
+    wireAutoSave(toggle);
     collabList.appendChild(el('label', { className: 'notif-collab-rule' }, [
       toggle,
       el('span', { className: 'notif-settings-rule-icon' }, [meta.icon]),
@@ -947,7 +1020,6 @@ function _openSettingsModal() {
   ]);
 
   /* -- Per-Waymark update notifications -- */
-  const waymarkToggles = {};
   const buildPerWaymarkList = () => {
     const ledgers = storage.getAllSharedDocLedgers();
     const seen = new Set();
@@ -976,6 +1048,7 @@ function _openSettingsModal() {
       if (enabled) toggleAttrs.checked = 'checked';
       const toggle = el('input', toggleAttrs);
       waymarkToggles[docId] = toggle;
+      wireAutoSave(toggle);
       list.appendChild(el('label', { className: 'notif-waymark-rule' }, [
         toggle,
         el('span', { className: 'notif-waymark-rule-icon' }, ['✏️']),
@@ -1009,77 +1082,108 @@ function _openSettingsModal() {
     }, ['Learn about Google Sheets email notifications →']),
   ]);
 
-  /* -- Connected Notification Sheet section -- */
+  /* -- Connected Notification Sheet section (context-aware) -- */
   let sheetActionBusy = false;
   let sheetActionError = '';
-  let autoConnectAttempted = false;
-  const connectNotifSheet = async (container) => {
+  const sheetSection = el('section', { className: 'notif-settings-section notif-sheet-section' }, []);
+
+  const connectNotifSheet = async () => {
     if (sheetActionBusy) return;
     sheetActionBusy = true;
     sheetActionError = '';
-    _buildSheetContent(container);
+    _buildSheetContent();
     const id = await ensureSheet();
     if (!id) {
-      sheetActionError = 'Could not create a notification sheet automatically. Open a Push Notification sheet and click "Use as Notification Sheet", then return here.';
+      sheetActionError = 'Could not create a notification sheet automatically. Open a Push Notification sheet and click "Use this sheet for notifications", then return here.';
     }
     sheetActionBusy = false;
-    _buildSheetContent(container);
+    _buildSheetContent();
   };
-  const _buildSheetContent = (container) => {
-    container.innerHTML = '';
-    const sheetId = storage.getNotifSheetId();
-    const labelEl = el('div', { className: 'notif-sheet-label' }, ['Push notification sheet']);
-    container.appendChild(labelEl);
 
-    if (sheetId) {
-      const statusEl = el('div', { className: 'notif-sheet-status' }, [
+  function _buildSheetContent() {
+    sheetSection.innerHTML = '';
+    const connectedId = storage.getNotifSheetId();
+    sheetSection.appendChild(el('div', { className: 'notif-sheet-label' }, ['Push notification sheet']));
+
+    // Inline view: you are already looking at a sheet — connect / disconnect it directly.
+    if (inline && viewingSheetId) {
+      if (connectedId === viewingSheetId) {
+        sheetSection.appendChild(el('div', { className: 'notif-sheet-status' }, [
+          el('span', { className: 'notif-sheet-status-text notif-sheet-status-ok' }, ['✅ This sheet powers your notifications']),
+          el('button', {
+            className: 'notif-sheet-clear',
+            on: {
+              click: () => {
+                storage.setNotifSheetId(null);
+                _buildSheetContent();
+                document.dispatchEvent(new CustomEvent('waymark:notifications-changed'));
+              },
+            },
+          }, ['Disconnect']),
+        ]));
+      } else {
+        sheetSection.appendChild(el('p', { className: 'notif-sheet-status-text' }, [
+          connectedId
+            ? 'A different sheet is currently connected to your notification bell.'
+            : 'This sheet is not powering your notifications yet.',
+        ]));
+        sheetSection.appendChild(el('button', {
+          className: 'btn btn-primary notif-sheet-create-btn',
+          on: {
+            click: () => {
+              storage.setNotifSheetId(viewingSheetId);
+              _buildSheetContent();
+              document.dispatchEvent(new CustomEvent('waymark:notifications-changed'));
+            },
+          },
+        }, ['Use this sheet for notifications']));
+      }
+      return;
+    }
+
+    // Modal view: create/connect flow.
+    if (connectedId) {
+      sheetSection.appendChild(el('div', { className: 'notif-sheet-status' }, [
         el('span', { className: 'notif-sheet-status-text notif-sheet-status-ok' }, ['✅ Connected']),
         el('a', {
           className: 'notif-sheet-view-link',
-          href: `#/sheet/${sheetId}`,
-          on: { click: () => overlay.remove() },
+          href: `#/sheet/${connectedId}`,
+          on: { click: () => onClose() },
         }, ['Open Sheet']),
         el('button', {
           className: 'notif-sheet-clear',
           on: {
             click: () => {
               storage.setNotifSheetId(null);
-              _buildSheetContent(container);
+              _buildSheetContent();
             },
           },
         }, ['Clear']),
-      ]);
-      container.appendChild(statusEl);
+      ]));
     } else {
-      const introEl = el('p', { className: 'notif-sheet-status-text' }, [
+      sheetSection.appendChild(el('p', { className: 'notif-sheet-status-text' }, [
         'No push notification sheet is connected yet.',
-      ]);
-      const helpEl = el('p', { className: 'notif-settings-intro' }, [
+      ]));
+      sheetSection.appendChild(el('p', { className: 'notif-settings-intro' }, [
         'Create one now to unlock full customization, sheet mirroring, and push-history controls.',
-      ]);
-      const createBtn = el('button', {
+      ]));
+      sheetSection.appendChild(el('button', {
         className: 'btn btn-primary notif-sheet-create-btn',
         disabled: sheetActionBusy ? 'disabled' : undefined,
-        on: { click: () => { void connectNotifSheet(container); } },
-      }, [sheetActionBusy ? 'Creating…' : 'Create & connect notification sheet']);
-      const manualHint = el('p', { className: 'notif-settings-intro notif-sheet-manual-hint' }, [
-        'Already have one? Open the sheet and click "Use as Notification Sheet".',
-      ]);
-      container.appendChild(introEl);
-      container.appendChild(helpEl);
-      container.appendChild(createBtn);
-      container.appendChild(manualHint);
+        on: { click: () => { void connectNotifSheet(); } },
+      }, [sheetActionBusy ? 'Creating…' : 'Create & connect notification sheet']));
+      sheetSection.appendChild(el('p', { className: 'notif-settings-intro notif-sheet-manual-hint' }, [
+        'Already have one? Open the sheet and click "Use this sheet for notifications".',
+      ]));
       if (sheetActionError) {
-        container.appendChild(el('div', { className: 'notif-sheet-error' }, [sheetActionError]));
+        sheetSection.appendChild(el('div', { className: 'notif-sheet-error' }, [sheetActionError]));
       }
     }
-  };
+  }
 
-  const sheetSection = el('section', { className: 'notif-settings-section notif-sheet-section' }, []);
-  _buildSheetContent(sheetSection);
-  if (!storage.getNotifSheetId() && !autoConnectAttempted && !(typeof window !== 'undefined' && window.__WAYMARK_LOCAL)) {
-    autoConnectAttempted = true;
-    void connectNotifSheet(sheetSection);
+  _buildSheetContent();
+  if (!inline && !storage.getNotifSheetId() && !(typeof window !== 'undefined' && window.__WAYMARK_LOCAL)) {
+    void connectNotifSheet();
   }
 
   /* -- Custom rules summary section -- */
@@ -1102,65 +1206,39 @@ function _openSettingsModal() {
     ruleList,
   ]);
 
-  const saveBtn = el('button', {
-    className: 'notif-settings-save',
-    on: {
-      click: () => {
-        const settings = {};
-        for (const [key, toggle] of Object.entries(toggles)) {
-          settings[key] = toggle.checked;
-        }
-        for (const [key, toggle] of Object.entries(collabToggles)) {
-          settings[key] = toggle.checked;
-        }
-        storage.setNotificationSettings(settings);
-        for (const [docId, toggle] of Object.entries(waymarkToggles)) {
-          storage.setWaymarkNotifPref(docId, { updates: toggle.checked });
-        }
-        overlay.remove();
-      },
-    },
-  }, ['Save']);
-
-  const modal = el('div', { className: 'modal notif-settings-modal' }, [
-    el('div', { className: 'modal-header notif-settings-modal-header' }, [
-      el('div', {}, [
-        el('h3', {}, ['🔔 Notification Settings']),
-        el('p', { className: 'modal-description notif-settings-description' }, [
-          'Control what can notify you, how updates are grouped, and which Waymarks can surface edit alerts.',
-        ]),
-      ]),
-      el('button', {
-        className: 'btn-icon notif-settings-close',
-        on: { click: () => overlay.remove() },
-      }, ['✕']),
-    ]),
-    el('div', { className: 'modal-body notif-settings-modal-body' }, [
-      el('div', { className: 'notif-settings-grid' }, [
-        collabSection,
-        sheetSection,
-        perWaymarkSection,
-        ruleSection,
-        rulesSection,
-        emailSection,
-      ]),
-    ]),
-    el('div', { className: 'modal-footer notif-settings-footer' }, [
-      el('button', {
-        className: 'notif-settings-cancel',
-        on: { click: () => overlay.remove() },
-      }, ['Cancel']),
-      saveBtn,
-    ]),
+  const grid = el('div', { className: 'notif-settings-grid' }, [
+    collabSection,
+    sheetSection,
+    perWaymarkSection,
+    ruleSection,
+    rulesSection,
+    emailSection,
   ]);
 
-  const overlay = el('div', {
-    id: 'notif-settings-modal',
-    className: 'modal-overlay notif-settings-modal-overlay',
-    on: { click: (e) => { if (e.target === overlay) overlay.remove(); } },
-  }, [modal]);
+  return { grid, save };
+}
 
-  document.body.appendChild(overlay);
+/**
+ * Render the full notification-settings surface inline into a container — used
+ * by the notification template so opening the Push Notification Sheet shows the
+ * settings view (they are one and the same). Changes auto-save.
+ * @param {HTMLElement} container
+ * @param {string} [sheetId] the sheet currently being viewed
+ */
+function renderInlineSettings(container, sheetId) {
+  if (!container) return;
+  container.innerHTML = '';
+  const { grid } = _buildSettingsUI({ inline: true, sheetId: sheetId || '' });
+  const view = el('div', { className: 'notif-settings-inline' }, [
+    el('div', { className: 'notif-settings-inline-header' }, [
+      el('h2', { className: 'notif-settings-inline-title' }, ['🔔 Notification Settings']),
+      el('p', { className: 'notif-settings-description' }, [
+        'This Waymark is your notification control center. Choose what can notify you, how updates group, and which Waymarks surface edit alerts. Changes save automatically.',
+      ]),
+    ]),
+    grid,
+  ]);
+  container.appendChild(view);
 }
 
 /**
@@ -1420,6 +1498,14 @@ function initBell() {
   if (!_bellInitialized && typeof document !== 'undefined') {
     _bellInitialized = true;
 
+    document.addEventListener('waymark:render-notification-settings', (e) => {
+      const detail = e.detail || {};
+      if (detail.container) {
+        renderInlineSettings(detail.container, detail.sheetId || '');
+        detail.handled = true;
+      }
+    });
+
     document.addEventListener('waymark:sheet-rendered', (e) => {
       const { sheetId, title, templateKey, rows, cols, headers } = e.detail || {};
       if (sheetId && rows) {
@@ -1535,6 +1621,7 @@ export {
   markAllRead,
   pollNotificationSheet,
   refreshBell,
+  renderInlineSettings,
   setShareActionDelegate,
   showRuleBuilder,
 };
