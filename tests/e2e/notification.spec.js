@@ -17,6 +17,27 @@ test('notification template is detected for sheet-046', async ({ page }) => {
   await expect(page.locator('.notif-settings-inline')).toBeVisible();
 });
 
+test('detect matches canonical and variant notification sheets, not look-alikes', async ({ page }) => {
+  await setupApp(page);
+  const result = await page.evaluate(async () => {
+    const { detectTemplate } = await import('/js/templates/index.js');
+    const key = (headers) => detectTemplate(headers).key;
+    return {
+      canonical: key(['Title', 'Message', 'Type', 'Status', 'Icon', 'Priority', 'Created', 'Expires', 'Source', 'Sheet']),
+      sourceSheetVariant: key(['Title', 'Message', 'Priority', 'Source', 'Sheet']),
+      iconVariant: key(['Title', 'Body', 'Icon', 'Status']),
+      // Look-alikes that must NOT be captured as notifications:
+      blog: key(['Title', 'Doc', 'Author', 'Date', 'Status']),
+      genericTitleBody: key(['Title', 'Body']),
+    };
+  });
+  expect(result.canonical).toBe('notification');
+  expect(result.sourceSheetVariant).toBe('notification');
+  expect(result.iconVariant).toBe('notification');
+  expect(result.blog).not.toBe('notification');
+  expect(result.genericTitleBody).not.toBe('notification');
+});
+
 test('notification sheet renders the settings control center', async ({ page }) => {
   await setupApp(page);
   await navigateToSheet(page, 'sheet-046');

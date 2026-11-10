@@ -29,12 +29,25 @@ const definition = {
   hasDirectoryView: true,
 
   detect(lower) {
-    return (
-      lower.some(h => /\btitle\b/.test(h)) &&
-      lower.some(h => /\bmessage\b|\bbody\b/.test(h)) &&
-      lower.some(h => /\bstatus\b/.test(h)) &&
-      lower.some(h => /\btype\b/.test(h))
-    );
+    const has = (re) => lower.some(h => re.test(h));
+    const title    = has(/\btitle\b/);
+    const message  = has(/\bmessage\b|\bbody\b/);
+    const status   = has(/\bstatus\b/);
+    const type     = has(/\btype\b/);
+    const source   = has(/\bsource\b/);
+    const icon     = has(/\bicon\b/);
+    const created  = has(/\bcreated\b/);
+    const expires  = has(/\bexpires?\b/);
+    const sheetRef = has(/\bsheet\b/);
+
+    // Canonical Waymark notification sheet: Title + Message + Status + Type.
+    if (title && message && status && type) return true;
+    // Push-history variants that are still unmistakably notification sheets —
+    // the Source+Sheet reference pair and an Icon column are notification-specific,
+    // so a sheet missing Status/Type but carrying these is still a notification sheet.
+    if (title && message && source && sheetRef) return true;
+    if (title && message && icon && (status || type || source || created || expires)) return true;
+    return false;
   },
 
   columns(lower) {
