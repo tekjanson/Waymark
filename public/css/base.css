@@ -1987,7 +1987,7 @@ html.waymark-android #search-input {
 .theme-presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .theme-preset {
   width: 100%;
-  min-height: 58px;
+  min-height: 54px;
   border-radius: 10px;
   border: 1px solid var(--color-border);
   cursor: pointer;
@@ -2105,8 +2105,22 @@ html.waymark-android #search-input {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 8px;
 }
+.theme-advanced {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  padding: 8px 10px;
+}
+.theme-advanced-summary {
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  font-size: 0.82rem;
+  font-weight: 700;
+  user-select: none;
+  margin: -2px 0 8px;
+}
+.theme-advanced[open] .theme-advanced-summary { margin-bottom: 10px; }
 .theme-code {
   width: 100%;
   min-height: 92px;
@@ -2767,6 +2781,7 @@ html.waymark-android #search-input {
   }
   .theme-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .theme-swatches { grid-template-columns: 1fr; }
+  .theme-builder-toolbar .btn { width: 100%; }
   .settings-profile {
     padding: 14px 16px;
   }

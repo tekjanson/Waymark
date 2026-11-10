@@ -376,15 +376,21 @@
               </div>
 
               <div class="theme-builder-field">
-                <span class="settings-sublabel">Power tools</span>
+                  <span class="settings-sublabel">Quick actions</span>
                 <div class="theme-builder-toolbar">
                   <button type="button" id="theme-load-layout-preset" class="btn btn-secondary btn-sm">Load active layout palette</button>
-                  <button type="button" id="theme-copy-code" class="btn btn-secondary btn-sm">Copy theme code</button>
-                  <button type="button" id="theme-apply-code" class="btn btn-secondary btn-sm">Apply pasted code</button>
+                  </div>
                 </div>
-                <textarea id="theme-code" class="theme-code" rows="4" spellcheck="false" aria-label="Theme JSON code"></textarea>
-                <p class="settings-hint settings-hint-compact">Paste or copy a full custom theme JSON object to move themes between workspaces quickly.</p>
-              </div>
+
+                <details class="theme-advanced">
+                  <summary class="theme-advanced-summary">Advanced import/export</summary>
+                  <div class="theme-builder-toolbar">
+                    <button type="button" id="theme-copy-code" class="btn btn-secondary btn-sm">Copy theme code</button>
+                    <button type="button" id="theme-apply-code" class="btn btn-secondary btn-sm">Apply pasted code</button>
+                  </div>
+                  <textarea id="theme-code" class="theme-code" rows="4" spellcheck="false" aria-label="Theme JSON code"></textarea>
+                  <p class="settings-hint settings-hint-compact">Paste or copy a full custom theme JSON object to move themes between workspaces quickly.</p>
+                </details>
 
               <div id="theme-builder-body" class="theme-builder-body">
                 <div class="settings-row">

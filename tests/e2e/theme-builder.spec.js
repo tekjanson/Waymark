@@ -36,6 +36,7 @@ test('theme builder renders 12 presets and 7 colour swatches', async ({ page }) 
   await expect(page.locator('#theme-presets .theme-preset')).toHaveCount(12);
   await expect(page.locator('#theme-swatches .theme-swatch')).toHaveCount(7);
   await expect(page.locator('#theme-color-accent')).toBeVisible();
+  await page.locator('.theme-advanced-summary').click();
   await expect(page.locator('#theme-copy-code')).toBeVisible();
   await expect(page.locator('#theme-apply-code')).toBeVisible();
   await expect(page.locator('#theme-code')).toBeVisible();
@@ -99,6 +100,7 @@ test('the base toggle flips the custom theme between light and dark', async ({ p
 test('theme code can be pasted and applied as a custom theme', async ({ page }) => {
   await setupApp(page);
   await openSettings(page);
+  await page.locator('.theme-advanced-summary').click();
 
   await page.locator('#theme-code').fill(JSON.stringify({
     enabled: true,
