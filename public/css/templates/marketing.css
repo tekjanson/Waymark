@@ -74,9 +74,9 @@
   border-left: 4px solid var(--color-border);
   transition: border-color var(--transition), background var(--transition);
 }
-.marketing-card-idea      { border-left-color: #94a3b8; }
-.marketing-card-drafting  { border-left-color: #3b82f6; }
-.marketing-card-ready     { border-left-color: #f59e0b; }
+.marketing-card-idea      { border-left-color: var(--tint-gray-text); }
+.marketing-card-drafting  { border-left-color: var(--color-primary); }
+.marketing-card-ready     { border-left-color: var(--tint-amber-text); }
 .marketing-card-posted    { border-left-color: #16a34a; }
 .marketing-card-analyzing { border-left-color: #e11d48; background: #fffbfb; }
 

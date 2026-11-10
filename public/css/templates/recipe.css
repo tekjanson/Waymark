@@ -31,7 +31,7 @@
 }
 .recipe-difficulty-badge.easy    { background: #f0fdf4; color: #16a34a; }
 .recipe-difficulty-badge.medium  { background: #fefce8; color: #ca8a04; }
-.recipe-difficulty-badge.hard    { background: #fef2f2; color: #dc2626; }
+.recipe-difficulty-badge.hard    { background: #fef2f2; color: var(--color-error); }
 
 /* Photo */
 .recipe-photo {
@@ -319,12 +319,12 @@
 }
 .recipe-status-untested { background: #f5f5f4; color: #78716c; border-color: #d6d3d1; }
 .recipe-status-approved { background: #dcfce7; color: #166534; border-color: #86efac; }
-.recipe-status-needs-work { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+.recipe-status-needs-work { background: #fef3c7; color: #92400e; border-color: var(--tint-amber-text); }
 
 .recipe-rating-section { display: flex; flex-direction: column; gap: 6px; }
 .recipe-rating-avg { font-size: 1.1rem; display: flex; align-items: center; gap: 2px; }
 .recipe-star { font-size: 1.1rem; line-height: 1; }
-.recipe-star-filled { color: #f59e0b; }
+.recipe-star-filled { color: var(--tint-amber-text); }
 .recipe-star-empty { color: #d1d5db; }
 .recipe-rating-count { font-size: 0.8rem; color: var(--color-text-muted); margin-left: 4px; }
 
@@ -794,7 +794,7 @@
 }
 .cookbook-card-diff.easy   { background: #f0fdf4; color: #16a34a; }
 .cookbook-card-diff.medium { background: #fefce8; color: #ca8a04; }
-.cookbook-card-diff.hard   { background: #fef2f2; color: #dc2626; }
+.cookbook-card-diff.hard   { background: #fef2f2; color: var(--color-error); }
 
 .cookbook-card-meta {
   display: flex;
@@ -1028,11 +1028,11 @@
 /* --- Dark Theme --- */
 
 /* Tabs & headings */
-[data-theme="dark"] .recipe-tab { color: #94a3b8; }
+[data-theme="dark"] .recipe-tab { color: var(--tint-gray-text); }
 [data-theme="dark"] .recipe-tab:hover { color: #fb923c; border-color: #fb923c; }
 [data-theme="dark"] .recipe-tab.active { color: #fb923c; border-color: #fb923c; }
 [data-theme="dark"] .recipe-tabs { background: rgba(180, 130, 60, 0.06); border-color: #3d3020; }
-[data-theme="dark"] .recipe-section-heading { color: #fbbf24; }
+[data-theme="dark"] .recipe-section-heading { color: var(--tint-amber-text); }
 [data-theme="dark"] .recipe-bullet::before { background: #fb923c; }
 
 /* Card structure */
@@ -1046,23 +1046,23 @@
 
 /* Difficulty badges */
 [data-theme="dark"] .recipe-difficulty-easy,
-[data-theme="dark"] .recipe-difficulty-badge.easy { background: rgba(74, 222, 128, 0.16); color: #4ade80; }
+[data-theme="dark"] .recipe-difficulty-badge.easy { background: var(--tint-green-bg); color: var(--tint-green-text); }
 [data-theme="dark"] .recipe-difficulty-medium,
-[data-theme="dark"] .recipe-difficulty-badge.medium { background: rgba(251, 191, 36, 0.14); color: #fbbf24; }
+[data-theme="dark"] .recipe-difficulty-badge.medium { background: var(--tint-amber-bg); color: var(--tint-amber-text); }
 [data-theme="dark"] .recipe-difficulty-hard,
-[data-theme="dark"] .recipe-difficulty-badge.hard { background: rgba(248, 113, 113, 0.16); color: #f87171; }
+[data-theme="dark"] .recipe-difficulty-badge.hard { background: var(--tint-red-bg); color: #f87171; }
 
 /* Status badges */
-[data-theme="dark"] .recipe-status-untested { background: rgba(148, 163, 184, 0.12); color: #94a3b8; border-color: rgba(148, 163, 184, 0.25); }
-[data-theme="dark"] .recipe-status-approved { background: rgba(74, 222, 128, 0.16); color: #4ade80; border-color: rgba(74, 222, 128, 0.3); }
-[data-theme="dark"] .recipe-status-needs-work { background: rgba(251, 191, 36, 0.14); color: #fcd34d; border-color: rgba(251, 191, 36, 0.3); }
+[data-theme="dark"] .recipe-status-untested { background: rgba(148, 163, 184, 0.12); color: var(--tint-gray-text); border-color: rgba(148, 163, 184, 0.25); }
+[data-theme="dark"] .recipe-status-approved { background: var(--tint-green-bg); color: var(--tint-green-text); border-color: rgba(74, 222, 128, 0.3); }
+[data-theme="dark"] .recipe-status-needs-work { background: var(--tint-amber-bg); color: var(--tint-amber-text); border-color: rgba(251, 191, 36, 0.3); }
 
 /* Ratings */
-[data-theme="dark"] .recipe-star-filled { color: #fbbf24; }
+[data-theme="dark"] .recipe-star-filled { color: var(--tint-amber-text); }
 [data-theme="dark"] .recipe-star-empty { color: #475569; }
-[data-theme="dark"] .recipe-checked { color: #22c55e; }
-[data-theme="dark"] .recipe-ingredient-checked::before { color: #4ade80 !important; }
-[data-theme="dark"] .recipe-shopping-mode .recipe-ingredient-checked::before { color: #4ade80 !important; }
+[data-theme="dark"] .recipe-checked { color: var(--color-success); }
+[data-theme="dark"] .recipe-ingredient-checked::before { color: var(--tint-green-text) !important; }
+[data-theme="dark"] .recipe-shopping-mode .recipe-ingredient-checked::before { color: var(--tint-green-text) !important; }
 
 /* Scale bar / Toolbar */
 [data-theme="dark"] .recipe-scale-bar { background: rgba(180, 130, 60, 0.08); }
@@ -1176,9 +1176,9 @@
   background: linear-gradient(90deg, #fb923c, #d4a574);
 }
 [data-theme="dark"] .cookbook-card-name { color: #e8d5b8; }
-[data-theme="dark"] .cookbook-card-diff.easy { background: rgba(74, 222, 128, 0.16); color: #4ade80; }
-[data-theme="dark"] .cookbook-card-diff.medium { background: rgba(251, 191, 36, 0.14); color: #fbbf24; }
-[data-theme="dark"] .cookbook-card-diff.hard { background: rgba(248, 113, 113, 0.16); color: #f87171; }
+[data-theme="dark"] .cookbook-card-diff.easy { background: var(--tint-green-bg); color: var(--tint-green-text); }
+[data-theme="dark"] .cookbook-card-diff.medium { background: var(--tint-amber-bg); color: var(--tint-amber-text); }
+[data-theme="dark"] .cookbook-card-diff.hard { background: var(--tint-red-bg); color: #f87171; }
 [data-theme="dark"] .cookbook-pill { background: rgba(180, 130, 60, 0.12); color: #d4a574; }
 [data-theme="dark"] .cookbook-card-category { color: #fb923c; }
 [data-theme="dark"] .cookbook-card-header { border-bottom-color: #3d3020; }

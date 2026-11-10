@@ -169,7 +169,7 @@
 .calorie-mascot-soil { fill: #8b5e34; opacity: 0.85; }
 .calorie-mascot-seed { fill: #a16207; }
 .calorie-mascot-stem { stroke: #16a34a; stroke-width: 4; stroke-linecap: round; }
-.calorie-mascot-leaf { fill: #22c55e; }
+.calorie-mascot-leaf { fill: var(--color-success); }
 .calorie-mascot-crown { fill: #16a34a; opacity: 0.9; }
 .calorie-mascot-bloom { fill: #f472b6; }
 .calorie-mascot-info { min-width: 0; }

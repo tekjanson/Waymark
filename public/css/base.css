@@ -11,13 +11,13 @@
   --color-surface: #ffffff;
   --color-text: #1e293b;
   --color-text-secondary: #64748b;
-  --color-text-muted: #94a3b8;
+  --color-text-muted: var(--tint-gray-text);
   --color-border: #e2e8f0;
   --color-success: #16a34a;
   --color-success-light: #dcfce7;
-  --color-error: #dc2626;
+  --color-error: var(--color-error);
   --color-error-light: #fee2e2;
-  --color-warning: #f59e0b;
+  --color-warning: var(--tint-amber-text);
   --color-shared: #8b5cf6;
   --color-shared-light: #ede9fe;
 
@@ -75,40 +75,40 @@
 
 /* ---------- Dark Theme ---------- */
 [data-theme="dark"] {
-  --color-primary: #3b82f6;
-  --color-primary-dark: #60a5fa;
+  --color-primary: var(--color-primary);
+  --color-primary-dark: var(--tint-blue-text);
   --color-primary-light: rgba(96, 165, 250, 0.18);
   --color-bg: #0f172a;
   --color-surface: #1e293b;
   --color-text: #e2e8f0;
-  --color-text-secondary: #94a3b8;
+  --color-text-secondary: var(--tint-gray-text);
   --color-text-muted: #64748b;
   --color-border: #334155;
-  --color-success: #22c55e;
+  --color-success: var(--color-success);
   --color-success-light: rgba(74, 222, 128, 0.18);
-  --color-error: #ef4444;
+  --color-error: var(--color-error);
   --color-error-light: rgba(248, 113, 113, 0.18);
-  --color-warning: #fbbf24;
-  --color-shared: #a78bfa;
+  --color-warning: var(--tint-amber-text);
+  --color-shared: var(--tint-purple-text);
   --color-shared-light: rgba(167, 139, 250, 0.18);
 
   --shadow: 0 1px 3px rgba(0,0,0,.3), 0 1px 2px rgba(0,0,0,.2);
   --shadow-lg: 0 4px 12px rgba(0,0,0,.4);
 
-  --tint-green-bg: rgba(74, 222, 128, 0.16);
-  --tint-green-text: #4ade80;
-  --tint-red-bg: rgba(248, 113, 113, 0.16);
-  --tint-red-text: #fca5a5;
-  --tint-amber-bg: rgba(251, 191, 36, 0.14);
-  --tint-amber-text: #fcd34d;
-  --tint-blue-bg: rgba(96, 165, 250, 0.16);
-  --tint-blue-text: #93c5fd;
-  --tint-purple-bg: rgba(167, 139, 250, 0.16);
-  --tint-purple-text: #c4b5fd;
+  --tint-green-bg: var(--tint-green-bg);
+  --tint-green-text: var(--tint-green-text);
+  --tint-red-bg: var(--tint-red-bg);
+  --tint-red-text: var(--tint-red-text);
+  --tint-amber-bg: var(--tint-amber-bg);
+  --tint-amber-text: var(--tint-amber-text);
+  --tint-blue-bg: var(--tint-blue-bg);
+  --tint-blue-text: var(--tint-blue-text);
+  --tint-purple-bg: var(--tint-purple-bg);
+  --tint-purple-text: var(--tint-purple-text);
   --tint-indigo-bg: rgba(129, 140, 248, 0.14);
   --tint-indigo-text: #a5b4fc;
-  --tint-gray-bg: rgba(148, 163, 184, 0.1);
-  --tint-gray-text: #94a3b8;
+  --tint-gray-bg: var(--tint-gray-bg);
+  --tint-gray-text: var(--tint-gray-text);
   --tint-teal-bg: rgba(94, 234, 212, 0.14);
   --tint-teal-text: #5eead4;
 
@@ -2340,7 +2340,7 @@ html.waymark-android #search-input {
 .btn-danger {
   display: inline-flex; align-items: center; gap: 8px;
   padding: 8px 18px; border-radius: var(--radius);
-  border: 1px solid #dc2626; background: #dc2626;
+  border: 1px solid var(--color-error); background: var(--color-error);
   color: #fff; font-weight: 500; font-size: 0.9rem;
   transition: background var(--transition), border-color var(--transition);
 }
@@ -2428,7 +2428,7 @@ html.waymark-android #search-input {
   margin: 0 24px 16px;
   padding: 10px 14px;
   background: #fef3c7;
-  border: 1px solid #fbbf24;
+  border: 1px solid var(--tint-amber-text);
   border-radius: var(--radius-sm);
   font-size: 0.82rem;
   line-height: 1.5;
@@ -3008,25 +3008,25 @@ html.waymark-android #search-input {
 
 /* Open in Sheets button */
 [data-theme="dark"] .btn-sheets {
-  background: rgba(74, 222, 128, 0.16); color: #4ade80; border-color: rgba(74, 222, 128, 0.3);
+  background: var(--tint-green-bg); color: var(--tint-green-text); border-color: rgba(74, 222, 128, 0.3);
 }
 [data-theme="dark"] .btn-sheets:hover { background: rgba(74, 222, 128, 0.25); }
-[data-theme="dark"] .btn-sheets svg { stroke: #4ade80; }
+[data-theme="dark"] .btn-sheets svg { stroke: var(--tint-green-text); }
 
 /* CSV button */
 [data-theme="dark"] .btn-csv {
-  background: rgba(96, 165, 250, 0.16); color: #93c5fd;
+  background: var(--tint-blue-bg); color: var(--tint-blue-text);
   border-color: rgba(96, 165, 250, 0.3);
 }
 [data-theme="dark"] .btn-csv:hover { background: rgba(96, 165, 250, 0.25); }
-[data-theme="dark"] .btn-csv svg { stroke: #93c5fd; }
+[data-theme="dark"] .btn-csv svg { stroke: var(--tint-blue-text); }
 
 /* Duplicate button */
 [data-theme="dark"] .btn-duplicate {
-  background: rgba(167, 139, 250, 0.16); color: #c4b5fd; border-color: rgba(167, 139, 250, 0.3);
+  background: var(--tint-purple-bg); color: var(--tint-purple-text); border-color: rgba(167, 139, 250, 0.3);
 }
 [data-theme="dark"] .btn-duplicate:hover { background: rgba(167, 139, 250, 0.25); }
-[data-theme="dark"] .btn-duplicate svg { stroke: #c4b5fd; }
+[data-theme="dark"] .btn-duplicate svg { stroke: var(--tint-purple-text); }
 
 /* Share button */
 [data-theme="dark"] .btn-share {
@@ -3045,11 +3045,11 @@ html.waymark-android #search-input {
 
 /* Open in Drive button */
 [data-theme="dark"] .btn-drive {
-  background: rgba(96, 165, 250, 0.16); color: #93c5fd;
+  background: var(--tint-blue-bg); color: var(--tint-blue-text);
   border-color: rgba(96, 165, 250, 0.3);
 }
 [data-theme="dark"] .btn-drive:hover { background: rgba(96, 165, 250, 0.25); }
-[data-theme="dark"] .btn-drive svg { stroke: #93c5fd; }
+[data-theme="dark"] .btn-drive svg { stroke: var(--tint-blue-text); }
 
 /* Share modal google button */
 [data-theme="dark"] .btn-share-google {
@@ -3068,20 +3068,20 @@ html.waymark-android #search-input {
 [data-theme="dark"] .migration-dismiss:hover { color: #a5b4fc; }
 
 /* Import confidence badges */
-[data-theme="dark"] .import-confidence-medium { background: rgba(251, 191, 36, 0.14); color: #fcd34d; }
+[data-theme="dark"] .import-confidence-medium { background: var(--tint-amber-bg); color: var(--tint-amber-text); }
 
 /* Duplicate modal hardcoded blues */
-[data-theme="dark"] .duplicate-breadcrumb-btn:hover { background: rgba(96, 165, 250, 0.16); }
-[data-theme="dark"] .duplicate-select-current-btn { background: rgba(96, 165, 250, 0.16); color: #93c5fd; }
+[data-theme="dark"] .duplicate-breadcrumb-btn:hover { background: var(--tint-blue-bg); }
+[data-theme="dark"] .duplicate-select-current-btn { background: var(--tint-blue-bg); color: var(--tint-blue-text); }
 [data-theme="dark"] .duplicate-select-current-btn:hover { background: rgba(96, 165, 250, 0.25); }
-[data-theme="dark"] .duplicate-folder-select-btn:hover { background: rgba(96, 165, 250, 0.16); }
+[data-theme="dark"] .duplicate-folder-select-btn:hover { background: var(--tint-blue-bg); }
 
 /* Settings modal breadcrumbs + folder select */
-[data-theme="dark"] .settings-breadcrumb-btn:hover { background: rgba(96, 165, 250, 0.16); }
-[data-theme="dark"] .settings-select-current-btn { background: rgba(96, 165, 250, 0.16); color: #93c5fd; }
+[data-theme="dark"] .settings-breadcrumb-btn:hover { background: var(--tint-blue-bg); }
+[data-theme="dark"] .settings-select-current-btn { background: var(--tint-blue-bg); color: var(--tint-blue-text); }
 [data-theme="dark"] .settings-select-current-btn:hover { background: rgba(96, 165, 250, 0.25); }
-[data-theme="dark"] .settings-folder-select-btn:hover { background: rgba(96, 165, 250, 0.16); }
-[data-theme="dark"] .settings-folder-item.selected { background: rgba(96, 165, 250, 0.16); }
+[data-theme="dark"] .settings-folder-select-btn:hover { background: var(--tint-blue-bg); }
+[data-theme="dark"] .settings-folder-item.selected { background: var(--tint-blue-bg); }
 [data-theme="dark"] .settings-hash-link { color: #a5b4fc; }
 
 /* Toast — dark bg with slight adjustment */
@@ -3275,7 +3275,7 @@ html.waymark-android #search-input {
   margin: 8px 0 0;
   padding: 10px 16px;
   background: #fffbeb;
-  border: 1px solid #fbbf24;
+  border: 1px solid var(--tint-amber-text);
   border-radius: var(--radius-sm);
   font-size: 0.85rem;
   color: #92400e;
@@ -3348,7 +3348,7 @@ html.waymark-android #search-input {
   padding: 0.75rem 1rem;
   margin: 1rem 0 0 0;
   background: #fef3c7;
-  border-left: 4px solid #fbbf24;
+  border-left: 4px solid var(--tint-amber-text);
   border-radius: var(--radius-sm);
   font-size: 0.9rem;
   color: #92400e;

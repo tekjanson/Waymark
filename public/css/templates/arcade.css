@@ -145,12 +145,12 @@
 }
 
 .arcade-status-listening {
-  background: #f59e0b;
+  background: var(--tint-amber-text);
   animation: arcade-pulse 1.5s ease-in-out infinite;
 }
 
 .arcade-status-pairing {
-  background: #3b82f6;
+  background: var(--color-primary);
   animation: arcade-pulse 0.8s ease-in-out infinite;
 }
 
@@ -159,7 +159,7 @@
 }
 
 .arcade-status-disconnected {
-  background: #ef4444;
+  background: var(--color-error);
 }
 
 @keyframes arcade-pulse {

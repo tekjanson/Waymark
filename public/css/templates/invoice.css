@@ -20,7 +20,7 @@
 .invoice-ar-paid .invoice-ar-value        { color: #059669; }
 .invoice-ar-outstanding .invoice-ar-value { color: #2563eb; }
 .invoice-ar-overdue .invoice-ar-value     { color: var(--color-text-muted); }
-.invoice-ar-has-overdue .invoice-ar-value { color: #dc2626; }
+.invoice-ar-has-overdue .invoice-ar-value { color: var(--color-error); }
 
 /* ---------- Status filter bar ---------- */
 .invoice-filter-bar {
@@ -50,12 +50,12 @@
 .invoice-card-open  { box-shadow: var(--shadow); }
 
 /* Status accent colors */
-.invoice-card-draft     { border-left-color: #94a3b8; }
+.invoice-card-draft     { border-left-color: var(--tint-gray-text); }
 .invoice-card-sent      { border-left-color: #2563eb; }
 .invoice-card-viewed    { border-left-color: #7c3aed; }
 .invoice-card-paid      { border-left-color: #059669; }
-.invoice-card-overdue   { border-left-color: #dc2626; }
-.invoice-card-cancelled { border-left-color: #94a3b8; opacity: 0.7; }
+.invoice-card-overdue   { border-left-color: var(--color-error); }
+.invoice-card-cancelled { border-left-color: var(--tint-gray-text); opacity: 0.7; }
 
 /* ---------- Card header ---------- */
 .invoice-card-header {
@@ -94,7 +94,7 @@
 .invoice-status-viewed    { background: #ede9fe; color: #6d28d9; }
 .invoice-status-paid      { background: #dcfce7; color: #15803d; }
 .invoice-status-overdue   { background: #fee2e2; color: #b91c1c; }
-.invoice-status-cancelled { background: #f1f5f9; color: #94a3b8; text-decoration: line-through; }
+.invoice-status-cancelled { background: #f1f5f9; color: var(--tint-gray-text); text-decoration: line-through; }
 
 /* ---------- Card details ---------- */
 .invoice-card-details { padding: 0 16px 14px; }
@@ -106,7 +106,7 @@
 }
 .invoice-card-date  { font-size: 0.8rem; color: var(--color-text-muted); }
 .invoice-card-due   { font-size: 0.8rem; color: var(--color-text-muted); }
-.invoice-due-overdue { color: #dc2626; font-weight: 600; }
+.invoice-due-overdue { color: var(--color-error); font-weight: 600; }
 .invoice-card-note  { font-size: 0.8rem; color: var(--color-text-muted); font-style: italic; }
 
 /* ---------- Line items table ---------- */

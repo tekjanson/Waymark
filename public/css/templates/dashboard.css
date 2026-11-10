@@ -35,7 +35,7 @@
 }
 
 .dashboard-empty-text {
-  color: var(--color-muted, #94a3b8);
+  color: var(--color-muted, var(--tint-gray-text));
   font-size: 0.95rem;
 }
 
@@ -87,7 +87,7 @@
 
 .dashboard-card-meta {
   font-size: 0.8rem;
-  color: var(--color-muted, #94a3b8);
+  color: var(--color-muted, var(--tint-gray-text));
   margin: 0;
 }
 
@@ -141,7 +141,7 @@
 .dashboard-layout-badge {
   font-size: 0.75rem;
   background: var(--color-bg);
-  color: var(--color-muted, #94a3b8);
+  color: var(--color-muted, var(--tint-gray-text));
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   padding: 2px 8px;
@@ -258,7 +258,7 @@
   justify-content: center;
   height: 100%;
   min-height: 120px;
-  color: var(--color-muted, #94a3b8);
+  color: var(--color-muted, var(--tint-gray-text));
   font-size: 0.9rem;
   padding: 16px;
 }
@@ -275,7 +275,7 @@
   height: 100%;
   min-height: 120px;
   gap: 12px;
-  color: var(--color-muted, #94a3b8);
+  color: var(--color-muted, var(--tint-gray-text));
   font-size: 0.9rem;
 }
 
@@ -386,7 +386,7 @@
 }
 
 .dashboard-picker-empty {
-  color: var(--color-muted, #94a3b8);
+  color: var(--color-muted, var(--tint-gray-text));
   font-size: 0.9rem;
   text-align: center;
   padding: 20px;

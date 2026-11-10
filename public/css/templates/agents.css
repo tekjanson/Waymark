@@ -58,7 +58,7 @@
 
 .agents-stat-label {
   font-size: 0.68rem;
-  color: #94a3b8;
+  color: var(--tint-gray-text);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -114,8 +114,8 @@
 
 .agents-card-status-online  { border-left: 3px solid #16a34a; }
 .agents-card-status-idle    { border-left: 3px solid #ca8a04; }
-.agents-card-status-offline { border-left: 3px solid #94a3b8; }
-.agents-card-status-error   { border-left: 3px solid #dc2626; }
+.agents-card-status-offline { border-left: 3px solid var(--tint-gray-text); }
+.agents-card-status-error   { border-left: 3px solid var(--color-error); }
 
 /* ---------- Card top: avatar + identity ---------- */
 .agents-card-top {
@@ -243,7 +243,7 @@
 
 .agents-tuning-hint {
   font-size: 0.7rem;
-  color: #94a3b8;
+  color: var(--tint-gray-text);
   margin-bottom: 4px;
 }
 
@@ -301,7 +301,7 @@
 }
 
 .agents-task-empty {
-  color: #94a3b8;
+  color: var(--tint-gray-text);
   font-style: italic;
 }
 
@@ -390,7 +390,7 @@
 .agents-keys-text { color: #334155; font-variant-numeric: tabular-nums; word-break: break-word; }
 
 .agents-keys-throttled {
-  border-color: #fca5a5;
+  border-color: var(--tint-red-text);
   background: #fef2f2;
 }
 .agents-keys-throttled .agents-keys-text { color: #b91c1c; font-weight: 600; }
@@ -441,7 +441,7 @@
 }
 
 .agents-feed-pulse-off {
-  background: #94a3b8;
+  background: var(--tint-gray-text);
   animation: none;
 }
 
@@ -472,7 +472,7 @@
   flex-shrink: 0;
   font-family: monospace;
   font-size: 0.68rem;
-  color: #94a3b8;
+  color: var(--tint-gray-text);
 }
 
 .agents-feed-text {
@@ -482,7 +482,7 @@
 .agents-feed-empty {
   font-size: 0.74rem;
   font-style: italic;
-  color: #94a3b8;
+  color: var(--tint-gray-text);
 }
 
 [data-theme="dark"] .agents-feed {
@@ -516,7 +516,7 @@
 .agents-workboard,
 .agents-command {
   font-size: 0.72rem;
-  color: #94a3b8;
+  color: var(--tint-gray-text);
 }
 
 .agents-field-label,
@@ -638,7 +638,7 @@
 }
 
 .agents-delete-btn:hover {
-  background: #fca5a5;
+  background: var(--tint-red-text);
   color: #7f1d1d;
 }
 
@@ -650,7 +650,7 @@
 .agents-folder,
 .agents-folder-cell {
   font-size: 0.72rem;
-  color: #94a3b8;
+  color: var(--tint-gray-text);
 }
 
 .agents-folder-cell {
@@ -711,7 +711,7 @@
   background: none;
   border: none;
   font-size: 1.5rem;
-  color: #94a3b8;
+  color: var(--tint-gray-text);
   cursor: pointer;
   padding: 0;
   width: 24px;
@@ -772,7 +772,7 @@
 }
 
 .agents-confirm-delete-btn {
-  background: #dc2626;
+  background: var(--color-error);
   color: #fff;
 }
 
@@ -792,7 +792,7 @@
 
 [data-theme="dark"] .agents-delete-btn:hover {
   background: #991b1b;
-  color: #fca5a5;
+  color: var(--tint-red-text);
 }
 
 [data-theme="dark"] .agents-delete-modal-content {
@@ -808,7 +808,7 @@
 }
 
 [data-theme="dark"] .agents-delete-modal-close {
-  color: #94a3b8;
+  color: var(--tint-gray-text);
 }
 
 [data-theme="dark"] .agents-delete-modal-close:hover {
@@ -820,7 +820,7 @@
 }
 
 [data-theme="dark"] .agents-delete-agent-name {
-  color: #fca5a5;
+  color: var(--tint-red-text);
 }
 
 [data-theme="dark"] .agents-delete-modal-footer {
@@ -838,7 +838,7 @@
 }
 
 [data-theme="dark"] .agents-confirm-delete-btn {
-  background: #dc2626;
+  background: var(--color-error);
   color: #fff;
 }
 
@@ -855,7 +855,7 @@
 
   background: #3b1f6e;
   border-color: #5b3aad;
-  color: #c4b5fd;
+  color: var(--tint-purple-text);
 }
 
 [data-theme="dark"] .agents-workboard-open:hover {
