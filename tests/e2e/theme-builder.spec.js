@@ -169,3 +169,32 @@ test('custom theme also skins Wayboard widgets and wayside surfaces', async ({ p
   });
   expect(chipBg).not.toBe('rgba(0, 0, 0, 0)');
 });
+
+test('custom theme overrides mode-1 light/dark fallback on Wayboard', async ({ page }) => {
+  await setupApp(page, { homeTemplateMode: 1 });
+  await openSettings(page);
+  await page.locator('#settings-theme-custom-enabled').check();
+  await page.evaluate(() => {
+    const setColor = (id, value) => {
+      const input = /** @type {HTMLInputElement} */ (document.getElementById(id));
+      input.value = value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    setColor('theme-color-bg', '#020f08');
+    setColor('theme-color-accent', '#39ff14');
+  });
+  await page.locator('#settings-modal-close').click();
+  await page.waitForSelector('#wayboard-root', { timeout: 5_000 });
+
+  const wayboardVars = await page.evaluate(() => {
+    const root = document.getElementById('wayboard-root');
+    if (!root) return { bg: '', accent: '' };
+    const styles = getComputedStyle(root);
+    return {
+      bg: styles.getPropertyValue('--bg').trim(),
+      accent: styles.getPropertyValue('--accent').trim(),
+    };
+  });
+  expect(wayboardVars.bg).toBe('#020f08');
+  expect(wayboardVars.accent).toBe('#39ff14');
+});

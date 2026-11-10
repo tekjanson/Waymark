@@ -70,7 +70,7 @@ html[data-wm-palette="custom"] #wayboard-root {
 #wayboard-root .home-greeting h2,
 #wayboard-root #home-greeting-text { color: var(--text); }
 #wayboard-root .home-greeting-sub { color: var(--muted); }
-#wayboard-root .badge { font-size: 10px; padding: 3px 8px; border-radius: 99px; background: rgba(16,185,129,0.15); color: var(--green); font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
+#wayboard-root .badge { font-size: 10px; padding: 3px 8px; border-radius: 99px; background: color-mix(in srgb, var(--green) 15%, transparent); color: var(--green); font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
 #wayboard-root .badge.blue { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
 #wayboard-root .section-head { display: flex; justify-content: space-between; align-items: center; font-size: 10px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 8px; }
 #wayboard-root .markers-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; transition: all 0.35s; }
@@ -270,7 +270,7 @@ html[data-wm-palette="custom"] #wayboard-root {
 #wayboard-root .chat-box-head { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 3px; }
 #wayboard-root .chat-box-actions { display: flex; gap: 3px; }
 #wayboard-root .chat-box-actions .btn { padding: 2px 6px; font-size: 9px; }
-#wayboard-root .btn-muted { background: #334155; }
+#wayboard-root .btn-muted { background: var(--border); }
 #wayboard-root .chat-sheet-line { font-size: 9px; color: var(--accent); }
 #wayboard-root .chat-input { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 8px; border-radius: 6px; font-size: 12px; }
 #wayboard-root .chat-log { overflow-wrap: anywhere; min-height: 80px; }
@@ -308,7 +308,7 @@ html[data-wm-palette="custom"] #wayboard-root {
 /* Wayside unified chat container & embedded widget adjustments */
 #wayboard-root .wayside-chat-container { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 220px; }
 #wayboard-root .chat-box.social-chat-embedded { padding: 0; overflow: hidden; display: flex; flex-direction: column; gap: 0; }
-#wayboard-root .social-chat-embedded .chat-sheet-line { padding: 4px 10px; background: rgba(0,0,0,0.05); }
+#wayboard-root .social-chat-embedded .chat-sheet-line { padding: 4px 10px; background: color-mix(in srgb, var(--text) 5%, transparent); }
 #wayboard-root .social-chat-embedded .social-chat-messages { padding: 8px 10px; flex: 1; }
 #wayboard-root .social-chat-embedded .social-chat-input-bar { padding: 8px 10px; }
 #wayboard-root .social-chat-embedded .social-call-bar { padding: 6px 10px; }
@@ -440,24 +440,24 @@ html[data-wm-palette="custom"] #wayboard-root {
   border-radius: 6px;
   font-size: 0.78rem;
   line-height: 1.4;
-  background: rgba(59, 130, 246, 0.08);
+  background: var(--tint-blue-bg);
   color: var(--color-text, #1e293b);
-  border: 1px solid rgba(59, 130, 246, 0.25);
+  border: 1px solid color-mix(in srgb, var(--tint-blue-text) 35%, transparent);
 }
 .wayside-oauth-tunnel-status.is-success {
-  background: rgba(16, 185, 129, 0.12);
-  border-color: rgba(16, 185, 129, 0.35);
+  background: var(--tint-green-bg);
+  border-color: color-mix(in srgb, var(--tint-green-text) 35%, transparent);
 }
 .wayside-oauth-tunnel-status.is-error {
-  background: rgba(239, 68, 68, 0.12);
-  border-color: rgba(239, 68, 68, 0.35);
+  background: var(--tint-red-bg);
+  border-color: color-mix(in srgb, var(--color-error) 35%, transparent);
 }
 div#wayboard-root .wayside-placeholder { display: flex; flex-direction: column; text-align: center; justify-content: center; align-items: center; }
 
 /* ---------- App light / dark theme applies to the neutral Command Center
    layout (mode-1); every other layout keeps its own fixed palette so the
    choice is actually visible. ---------- */
-html[data-theme="light"] #wayboard-root.mode-1 {
+html[data-theme="light"]:not([data-wm-palette="custom"]) #wayboard-root.mode-1 {
   --bg: #f4f7fb;
   --panel: #ffffff;
   --card: #ffffff;
@@ -468,7 +468,7 @@ html[data-theme="light"] #wayboard-root.mode-1 {
   color-scheme: light;
 }
 
-html[data-theme="dark"] #wayboard-root.mode-1 {
+html[data-theme="dark"]:not([data-wm-palette="custom"]) #wayboard-root.mode-1 {
   --bg: #0f172a;
   --panel: #1e293b;
   --card: #202b3b;
