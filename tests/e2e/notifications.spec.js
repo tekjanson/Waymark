@@ -197,6 +197,8 @@ test('built-in rule toggles are unchecked by default', async ({ page }) => {
 
 test('new-shared-Waymarks is the only collab toggle on by default', async ({ page }) => {
   await setupApp(page);
+  await page.evaluate(() => localStorage.removeItem('waymark_notification_settings'));
+  await page.reload();
   await page.click('.notif-bell');
   await page.waitForSelector('.notif-panel:not(.hidden)', { timeout: 3000 });
   await page.click('.notif-settings-btn');

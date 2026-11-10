@@ -941,7 +941,7 @@ function _openSettingsModal() {
       ]),
     ]));
   }
-  const collabSection = el('div', { className: 'notif-collab-section' }, [
+  const collabSection = el('section', { className: 'notif-settings-section notif-collab-section' }, [
     el('div', { className: 'notif-sheet-label' }, ['Collaboration & Wayside']),
     collabList,
   ]);
@@ -985,7 +985,7 @@ function _openSettingsModal() {
     return list;
   };
 
-  const perWaymarkSection = el('div', { className: 'notif-waymark-section' }, [
+  const perWaymarkSection = el('section', { className: 'notif-settings-section notif-waymark-section' }, [
     el('div', { className: 'notif-sheet-label' }, ['Per-Waymark edit alerts']),
     el('p', { className: 'notif-settings-intro' }, [
       'Edit alerts are off by default. Turn them on only for the Waymarks you want to follow closely.',
@@ -994,7 +994,8 @@ function _openSettingsModal() {
   ]);
 
   /* -- Email notifications section -- */
-  const emailSection = el('div', { className: 'notif-settings-email' }, [
+  const emailSection = el('section', { className: 'notif-settings-section notif-settings-email' }, [
+    el('div', { className: 'notif-sheet-label' }, ['Email notifications']),
     el('p', {}, [
       'For email notifications, set up notification rules directly in Google Sheets: ',
       el('strong', {}, ['Tools → Notification rules']),
@@ -1009,15 +1010,30 @@ function _openSettingsModal() {
   ]);
 
   /* -- Connected Notification Sheet section -- */
+  let sheetActionBusy = false;
+  let sheetActionError = '';
+  let autoConnectAttempted = false;
+  const connectNotifSheet = async (container) => {
+    if (sheetActionBusy) return;
+    sheetActionBusy = true;
+    sheetActionError = '';
+    _buildSheetContent(container);
+    const id = await ensureSheet();
+    if (!id) {
+      sheetActionError = 'Could not create a notification sheet automatically. Open a Push Notification sheet and click "Use as Notification Sheet", then return here.';
+    }
+    sheetActionBusy = false;
+    _buildSheetContent(container);
+  };
   const _buildSheetContent = (container) => {
     container.innerHTML = '';
     const sheetId = storage.getNotifSheetId();
-    const labelEl = el('div', { className: 'notif-sheet-label' }, ['Notification Sheet']);
+    const labelEl = el('div', { className: 'notif-sheet-label' }, ['Push notification sheet']);
     container.appendChild(labelEl);
 
     if (sheetId) {
       const statusEl = el('div', { className: 'notif-sheet-status' }, [
-        el('span', { className: 'notif-sheet-status-text' }, ['Connected to notification sheet']),
+        el('span', { className: 'notif-sheet-status-text notif-sheet-status-ok' }, ['✅ Connected']),
         el('a', {
           className: 'notif-sheet-view-link',
           href: `#/sheet/${sheetId}`,
@@ -1036,25 +1052,54 @@ function _openSettingsModal() {
       container.appendChild(statusEl);
     } else {
       const introEl = el('p', { className: 'notif-sheet-status-text' }, [
-        'No notification sheet configured. Open a Push Notification sheet and click "Use as Notification Sheet".',
+        'No push notification sheet is connected yet.',
+      ]);
+      const helpEl = el('p', { className: 'notif-settings-intro' }, [
+        'Create one now to unlock full customization, sheet mirroring, and push-history controls.',
+      ]);
+      const createBtn = el('button', {
+        className: 'btn btn-primary notif-sheet-create-btn',
+        disabled: sheetActionBusy ? 'disabled' : undefined,
+        on: { click: () => { void connectNotifSheet(container); } },
+      }, [sheetActionBusy ? 'Creating…' : 'Create & connect notification sheet']);
+      const manualHint = el('p', { className: 'notif-settings-intro notif-sheet-manual-hint' }, [
+        'Already have one? Open the sheet and click "Use as Notification Sheet".',
       ]);
       container.appendChild(introEl);
+      container.appendChild(helpEl);
+      container.appendChild(createBtn);
+      container.appendChild(manualHint);
+      if (sheetActionError) {
+        container.appendChild(el('div', { className: 'notif-sheet-error' }, [sheetActionError]));
+      }
     }
   };
 
-  const sheetSection = el('div', { className: 'notif-sheet-section' }, []);
+  const sheetSection = el('section', { className: 'notif-settings-section notif-sheet-section' }, []);
   _buildSheetContent(sheetSection);
+  if (!storage.getNotifSheetId() && !autoConnectAttempted && !(typeof window !== 'undefined' && window.__WAYMARK_LOCAL)) {
+    autoConnectAttempted = true;
+    void connectNotifSheet(sheetSection);
+  }
 
   /* -- Custom rules summary section -- */
   const allRules = storage.getAllNotificationRules();
   const totalRules = Object.values(allRules).reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
-  const rulesSection = el('div', { className: 'notif-custom-rules-section' }, [
+  const rulesSection = el('section', { className: 'notif-settings-section notif-custom-rules-section' }, [
     el('div', { className: 'notif-sheet-label' }, ['Custom Rules']),
     el('p', { className: 'notif-settings-intro' }, [
       totalRules > 0
         ? `${totalRules} rule${totalRules !== 1 ? 's' : ''} configured across your sheets.`
         : 'No custom notification rules configured.',
     ]),
+  ]);
+
+  const ruleSection = el('section', { className: 'notif-settings-section' }, [
+    el('div', { className: 'notif-sheet-label' }, ['Built-in sheet rules']),
+    el('p', { className: 'notif-settings-intro' }, [
+      'These are disabled by default to prevent noise. Turn on only the alerts you care about.',
+    ]),
+    ruleList,
   ]);
 
   const saveBtn = el('button', {
@@ -1078,23 +1123,27 @@ function _openSettingsModal() {
   }, ['Save']);
 
   const modal = el('div', { className: 'modal notif-settings-modal' }, [
-    el('div', { className: 'modal-header' }, [
-      el('h3', {}, ['🔔 Notification Settings']),
+    el('div', { className: 'modal-header notif-settings-modal-header' }, [
+      el('div', {}, [
+        el('h3', {}, ['🔔 Notification Settings']),
+        el('p', { className: 'modal-description notif-settings-description' }, [
+          'Control what can notify you, how updates are grouped, and which Waymarks can surface edit alerts.',
+        ]),
+      ]),
       el('button', {
         className: 'btn-icon notif-settings-close',
         on: { click: () => overlay.remove() },
       }, ['✕']),
     ]),
-    el('div', { className: 'modal-body' }, [
-      el('p', { className: 'notif-settings-intro' }, [
-        'Choose which alerts appear when you open a sheet.',
+    el('div', { className: 'modal-body notif-settings-modal-body' }, [
+      el('div', { className: 'notif-settings-grid' }, [
+        ruleSection,
+        collabSection,
+        perWaymarkSection,
+        sheetSection,
+        rulesSection,
+        emailSection,
       ]),
-      ruleList,
-      collabSection,
-      perWaymarkSection,
-      emailSection,
-      sheetSection,
-      rulesSection,
     ]),
     el('div', { className: 'modal-footer' }, [saveBtn]),
   ]);

@@ -248,7 +248,7 @@ test('notification settings modal shows Notification Sheet section', async ({ pa
   await page.click('.notif-settings-btn');
   await page.waitForSelector('.notif-settings-modal', { timeout: 3000 });
   await expect(page.locator('.notif-sheet-section')).toBeVisible();
-  await expect(page.locator('.notif-sheet-section .notif-sheet-label')).toContainText('Notification Sheet');
+  await expect(page.locator('.notif-sheet-section .notif-sheet-label')).toContainText('Push notification sheet');
 });
 
 test('settings modal shows configured sheet ID when one is set', async ({ page }) => {
@@ -262,7 +262,7 @@ test('settings modal shows configured sheet ID when one is set', async ({ page }
   await page.waitForSelector('.notif-panel', { timeout: 3000 });
   await page.click('.notif-settings-btn');
   await page.waitForSelector('.notif-settings-modal', { timeout: 3000 });
-  await expect(page.locator('.notif-sheet-status-text')).toContainText('Connected to notification sheet');
+  await expect(page.locator('.notif-sheet-status-text')).toContainText('Connected');
 });
 
 test('clear button in settings modal removes the configured sheet ID', async ({ page }) => {
@@ -278,7 +278,7 @@ test('clear button in settings modal removes the configured sheet ID', async ({ 
   await page.click('.notif-sheet-clear');
   const stored = await page.evaluate(() => localStorage.getItem('waymark_notif_sheet_id'));
   expect(stored).toBeNull();
-  await expect(page.locator('.notif-sheet-status-text')).toContainText('No notification sheet configured');
+  await expect(page.locator('.notif-sheet-status-text')).toContainText('No push notification sheet is connected yet');
 });
 
 /* ---------- Layer 8: Mobile Responsiveness ---------- */
@@ -871,5 +871,4 @@ test('collaboration notification toggles in settings modal persist and control u
   expect(result.savedSettings.collabUpdates).toBe(false);
   expect(result.pushed).toBe(0);
 });
-
 

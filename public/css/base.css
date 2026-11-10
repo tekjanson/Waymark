@@ -588,11 +588,62 @@ input#search-input::placeholder { color: var(--color-text-muted); }
 
 .notif-settings-btn:hover { background: var(--color-bg); }
 
+.notif-settings-modal-overlay {
+  align-items: stretch;
+  justify-content: center;
+  padding: 14px;
+}
+
+.notif-settings-modal {
+  width: min(1200px, calc(100vw - 28px));
+  max-width: 1200px;
+  height: min(94vh, 980px);
+  max-height: min(94vh, 980px);
+}
+
+.notif-settings-modal-header {
+  padding: 18px 22px 10px;
+  border-bottom: 1px solid var(--color-border);
+  align-items: flex-start;
+}
+
+.notif-settings-description {
+  margin: 6px 0 0;
+  padding: 0;
+}
+
+.notif-settings-modal-body {
+  padding: 14px 18px 8px;
+}
+
+.notif-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.notif-settings-section {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+
+.notif-sheet-label {
+  font-size: 0.83rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  margin-bottom: 8px;
+}
+
 .notif-settings-rules {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin: 12px 0;
+  margin: 6px 0 0;
 }
 
 .notif-settings-rule {
@@ -625,7 +676,7 @@ input#search-input::placeholder { color: var(--color-text-muted); }
 .notif-settings-toggle { margin-top: 3px; flex-shrink: 0; }
 
 /* Collaboration category + per-Waymark toggles reuse the settings-rule look */
-.notif-collab-section, .notif-waymark-section { margin-top: 16px; }
+.notif-collab-section, .notif-waymark-section { margin-top: 0; }
 
 .notif-collab-rules {
   display: flex;
@@ -653,7 +704,7 @@ input#search-input::placeholder { color: var(--color-text-muted); }
   flex-direction: column;
   gap: 6px;
   margin: 8px 0;
-  max-height: 180px;
+  max-height: 280px;
   overflow-y: auto;
 }
 
@@ -683,11 +734,11 @@ input#search-input::placeholder { color: var(--color-text-muted); }
 .notif-settings-intro {
   font-size: 0.85rem;
   color: var(--color-text-muted);
-  margin-bottom: 4px;
+  margin: 0 0 8px;
 }
 
 .notif-settings-email {
-  margin-top: 16px;
+  margin-top: 0;
   padding: 12px;
   background: var(--color-bg);
   border-radius: var(--radius);
@@ -713,6 +764,62 @@ input#search-input::placeholder { color: var(--color-text-muted); }
 }
 
 .notif-settings-save:hover { opacity: 0.9; }
+
+.notif-sheet-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.notif-sheet-status-text {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.notif-sheet-status-ok {
+  color: var(--color-success);
+  font-weight: 600;
+}
+
+.notif-sheet-view-link {
+  color: var(--color-primary);
+  font-size: 0.82rem;
+  text-decoration: none;
+}
+
+.notif-sheet-view-link:hover {
+  text-decoration: underline;
+}
+
+.notif-sheet-clear {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: 0.78rem;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.notif-sheet-create-btn {
+  margin: 4px 0 8px;
+}
+
+.notif-sheet-manual-hint {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.notif-sheet-error {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: #fef2f2;
+  color: var(--color-error);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
 
 .notif-list { padding: 4px 0; }
 
@@ -754,6 +861,28 @@ input#search-input::placeholder { color: var(--color-text-muted); }
   }
   .notif-list {
     max-height: calc(100vh - 140px);
+  }
+  .notif-settings-modal-overlay {
+    padding: 0;
+  }
+  .notif-settings-modal {
+    width: 100vw;
+    height: 100vh;
+    max-height: 100vh;
+    border-radius: 0;
+  }
+  .notif-settings-modal-header {
+    padding: 14px 14px 8px;
+  }
+  .notif-settings-modal-body {
+    padding: 10px 10px 6px;
+  }
+  .notif-settings-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .notif-waymark-rules {
+    max-height: 220px;
   }
 }
 
