@@ -496,7 +496,23 @@ input#search-input::placeholder { color: var(--color-text-muted); }
 .notif-item-link { cursor: pointer; }
 .notif-item-link:hover, .notif-item:hover { background: var(--color-bg); }
 .notif-item-unread { background: var(--color-primary-light); }
-.notif-item-title { font-size: 0.84rem; font-weight: 600; color: var(--color-text); word-break: break-word; }
+.notif-item-title { font-size: 0.84rem; font-weight: 600; color: var(--color-text); word-break: break-word; display: flex; align-items: center; gap: 6px; }
+.notif-item-title-text { word-break: break-word; }
+.notif-item-count {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+}
 .notif-item-body { margin-top: 2px; font-size: 0.76rem; color: var(--color-text-secondary); line-height: 1.4; word-break: break-word; }
 
 .notif-item-actions {
@@ -607,6 +623,62 @@ input#search-input::placeholder { color: var(--color-text-muted); }
 }
 
 .notif-settings-toggle { margin-top: 3px; flex-shrink: 0; }
+
+/* Collaboration category + per-Waymark toggles reuse the settings-rule look */
+.notif-collab-section, .notif-waymark-section { margin-top: 16px; }
+
+.notif-collab-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.notif-collab-rule {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.notif-collab-rule:hover { background: var(--color-bg); }
+.notif-collab-toggle { margin-top: 3px; flex-shrink: 0; }
+
+.notif-waymark-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.notif-waymark-rule {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.notif-waymark-rule:hover { background: var(--color-bg); }
+.notif-waymark-toggle { flex-shrink: 0; }
+.notif-waymark-rule-icon { font-size: 1rem; flex-shrink: 0; }
+.notif-waymark-rule-label {
+  font-size: 0.84rem;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 
 .notif-settings-intro {
   font-size: 0.85rem;

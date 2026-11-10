@@ -502,6 +502,8 @@ test('multi-user collaboration: Alice edits a shared Waymark and Bob receives an
   const bobUpdate = await bobPage.evaluate(async () => {
     const collab = await import('/js/collab.js');
     const storage = await import('/js/storage.js');
+    // Bob follows edits to this shared Waymark (off by default — opt in).
+    storage.setWaymarkNotifPref('sheet-001', { updates: true });
     // Wait briefly if Alice's async notifySheetMutation is still in flight
     for (let attempt = 0; attempt < 10; attempt++) {
       await collab.pollShareLedgers();
@@ -632,13 +634,15 @@ test('passive digest diff detection pushes an update notification when an accept
     const { api } = await import('/js/api-client.js');
     const storage = await import('/js/storage.js');
 
-    // Accept sheet-001 (stores initial digest)
+    // Accept sheet-001 (stores initial digest) and opt in to its edit alerts
+    // (edit notifications are off by default now).
     await collab.acceptSharedWaymark({
       docId: 'sheet-001',
       docTitle: 'Groceries',
       waymarkType: 'checklist',
       from: 'alice@example.com',
     });
+    storage.setWaymarkNotifPref('sheet-001', { updates: true });
 
     // Simulate an external Google Sheets edit directly on sheet-001
     await api.sheets.appendRows('sheet-001', 'Sheet1', [['Organic Honey', 'false', 'Pantry', '2026-05-01']]);
@@ -827,6 +831,7 @@ test('full end-to-end two-user sharing, mobile notification triage, collaborativ
     const collab = await import('/js/collab.js');
     const storage = await import('/js/storage.js');
     const userData = await import('/js/user-data.js');
+    storage.setWaymarkNotifPref('sheet-001', { updates: true });
     await userData.addShareLedger({
       key: 'contact-pair:alice@example.com::bob@example.com',
       contactEmail: 'bob@example.com',

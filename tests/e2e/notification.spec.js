@@ -841,9 +841,10 @@ test('collaboration notification toggles in settings modal persist and control u
   await page.click('.notif-settings-btn');
   await page.waitForSelector('.notif-settings-modal', { timeout: 3000 });
 
-  // Built-in rule count remains 4 while 3 collaboration toggles are present
+  // Built-in rule count remains 4 while 4 collaboration toggles are present
+  // (shares, chat, AI agent, and shared-Waymark edits).
   await expect(page.locator('.notif-settings-rule')).toHaveCount(4);
-  await expect(page.locator('.notif-collab-rule')).toHaveCount(3);
+  await expect(page.locator('.notif-collab-rule')).toHaveCount(4);
 
   // Uncheck collabUpdates and save
   const updatesToggle = page.locator('.notif-collab-toggle[data-collab-key="collabUpdates"]');

@@ -22,19 +22,26 @@ const NOTIF_SHEET_HEADERS = [
   'Title', 'Message', 'Type', 'Status', 'Icon', 'Priority', 'Created', 'Expires', 'Source', 'Sheet',
 ];
 
-/** Default notification rule states — all enabled */
+/** Default notification rule states — OFF by default so sheet-rule alerts
+ *  never bury the notifications that matter. Opt in per-waymark or globally. */
 const DEFAULT_RULES = {
-  kanbanOverdue: true,
-  kanbanP0: true,
-  budgetOverspend: true,
-  checklistOverdue: true,
+  kanbanOverdue: false,
+  kanbanP0: false,
+  budgetOverspend: false,
+  checklistOverdue: false,
 };
 
-/** Default collaboration notification preferences — all enabled */
+/**
+ * Default collaboration notification preferences.
+ * Only "new shared Waymarks" is on by default — everything else is opt-in so
+ * repeated edits don't spam the bell. Chat and AI-agent updates stay on because
+ * they are time-sensitive, but they are grouped so they never pile up.
+ */
 const DEFAULT_COLLAB_PREFS = {
-  collabUpdates: true,
   collabShares: true,
   collabChat: true,
+  collabAgent: true,
+  collabUpdates: false,
 };
 
 /** Human-readable labels for built-in notification rules */
@@ -46,10 +53,14 @@ const RULE_LABELS = {
 };
 
 const COLLAB_LABELS = {
-  collabUpdates: { icon: '✏️', label: 'Shared Waymark updates', desc: 'Alert when collaborators edit or add items to shared Waymarks' },
-  collabShares: { icon: '📤', label: 'New shared Waymarks', desc: 'Alert when a collaborator shares a Waymark with you' },
-  collabChat: { icon: '💬', label: 'Wayside chat & calls', desc: 'Alert on new Wayside messages and incoming WebRTC calls' },
+  collabShares: { icon: '📤', label: 'New shared Waymarks', desc: 'Alert when a collaborator shares a new Waymark with you (recommended)' },
+  collabChat: { icon: '💬', label: 'Wayside chat & calls', desc: 'Grouped alerts for new Wayside messages and incoming calls' },
+  collabAgent: { icon: '🤖', label: 'AI agent updates', desc: 'Grouped alerts when an AI agent posts progress or results' },
+  collabUpdates: { icon: '✏️', label: 'Shared Waymark edits', desc: 'Off by default — turn on per-Waymark below, or globally here' },
 };
+
+/** Notification types that coalesce into a single grouped bell entry. */
+const GROUPABLE_TYPES = new Set(['update', 'chat', 'agent']);
 
 /* ---------- State ---------- */
 
@@ -64,10 +75,82 @@ function _defaultIcon(type) {
   if (type === 'warning') return '⚠️';
   if (type === 'success') return '✅';
   if (type === 'chat') return '💬';
+  if (type === 'agent') return '🤖';
   if (type === 'share') return '📤';
   if (type === 'update') return '✏️';
   if (type === 'call') return '📞';
   return '🔔';
+}
+
+/**
+ * Decide whether a collaboration notification category should surface, honouring
+ * the per-Waymark override first and falling back to the global default.
+ * @param {string} type notification type ('update'|'chat'|'agent'|'share'|'call')
+ * @param {string} [sheetId] the Waymark the notification is about
+ * @returns {boolean}
+ */
+function isCategoryEnabled(type, sheetId) {
+  const prefs = { ...DEFAULT_COLLAB_PREFS, ...storage.getNotificationSettings() };
+  const ov = sheetId ? (storage.getWaymarkNotifPref(sheetId) || {}) : {};
+  switch (type) {
+    case 'update':
+      if (typeof ov.updates === 'boolean') return ov.updates;
+      return prefs.collabUpdates === true;
+    case 'chat':
+    case 'call':
+      if (typeof ov.chat === 'boolean') return ov.chat;
+      return prefs.collabChat !== false;
+    case 'agent':
+      return prefs.collabAgent !== false;
+    case 'share':
+      return prefs.collabShares !== false;
+    default:
+      return true;
+  }
+}
+
+/**
+ * Stable grouping key so repeated activity on the same Waymark collapses into
+ * one bell entry instead of stacking. Returns '' for types that never group.
+ * @param {{ type?: string, sheetId?: string, group?: string, from?: string }} entry
+ * @returns {string}
+ */
+function _groupKeyFor(entry) {
+  const type = (entry.type || '').toLowerCase();
+  if (!GROUPABLE_TYPES.has(type)) return '';
+  const anchor = entry.sheetId || entry.group || entry.from || '';
+  if (!anchor) return '';
+  return `g:${type}:${anchor}`;
+}
+
+/**
+ * Collapse a new notification into an existing unread group, updating its count
+ * and summary line. Once a group is read it is "closed" — fresh activity opens a
+ * new group so the user isn't surprised by a silently growing count.
+ * @param {Object} group existing grouped entry (mutated)
+ * @param {Object} entry incoming notification entry
+ */
+function _applyGroupSummary(group, entry) {
+  const count = (group.count || 1) + 1;
+  group.count = count;
+  const docTitle = entry.docTitle || group.docTitle || '';
+  const where = docTitle ? ` to "${docTitle}"` : '';
+  const who = entry.from || group.from || '';
+  if (group.type === 'chat') {
+    const inDoc = docTitle ? ` in "${docTitle}"` : '';
+    group.title = `${count} new messages${inDoc}`;
+    group.body = who ? `${who}: ${entry.body || ''}`.trim() : (entry.body || '');
+  } else if (group.type === 'agent') {
+    const inDoc = docTitle ? ` on "${docTitle}"` : '';
+    group.title = `🤖 ${count} AI agent updates${inDoc}`;
+    group.body = entry.body || group.body || '';
+  } else {
+    group.title = `${count} updates${where}`;
+    group.body = who ? `Latest: ${entry.body || 'edited this Waymark'} — ${who}` : (entry.body || group.body || '');
+  }
+  group.message = group.body ? `${group.title} — ${group.body}` : group.title;
+  group.docTitle = docTitle;
+  if (who) group.from = who;
 }
 
 /* ---------- Notification store (top-bar bell) ---------- */
@@ -87,7 +170,8 @@ function addNotification(notif) {
   const id = notif.id || notif.key || `${notif.sheetId || ''}:${title}:${Date.now()}`;
   const key = notif.key || id;
 
-  if (items.some(n => (n.id && n.id === id) || (n.key && n.key === key))) return null;
+  if (items.some(n => (n.id && n.id === id) || (n.key && n.key === key)
+      || (Array.isArray(n.memberIds) && n.memberIds.includes(id)))) return null;
   // A document only ever needs one share prompt — re-polled ledger rows or a
   // re-imported Push Notification Sheet row must not stack duplicates.
   if (String(notif.type || '').toLowerCase() === 'share' && notif.sheetId
@@ -122,6 +206,29 @@ function addNotification(notif) {
     timestamp: ts,
     read: Boolean(notif.read),
   };
+
+  // Coalesce repeated activity on the same Waymark into one grouped entry so ten
+  // edits read as "10 updates to X" instead of ten separate rows.
+  const groupKey = _groupKeyFor(entry);
+  if (groupKey) {
+    const gIdx = items.findIndex(n => n.groupKey === groupKey && !n.read);
+    if (gIdx >= 0) {
+      const group = items[gIdx];
+      group.memberIds = Array.isArray(group.memberIds) ? group.memberIds : [group.id];
+      group.memberIds.push(id);
+      _applyGroupSummary(group, entry);
+      group.ts = ts;
+      group.timestamp = ts;
+      items.splice(gIdx, 1);
+      items.unshift(group);
+      storage.setNotifications(items);
+      _refreshBellBadge();
+      return group;
+    }
+    entry.groupKey = groupKey;
+    entry.count = 1;
+    entry.memberIds = [id];
+  }
 
   items.unshift(entry);
   if (items.length > MAX_NOTIFICATIONS) items.length = MAX_NOTIFICATIONS;
@@ -839,6 +946,53 @@ function _openSettingsModal() {
     collabList,
   ]);
 
+  /* -- Per-Waymark update notifications -- */
+  const waymarkToggles = {};
+  const buildPerWaymarkList = () => {
+    const ledgers = storage.getAllSharedDocLedgers();
+    const seen = new Set();
+    const entries = [];
+    for (const [docId, list] of Object.entries(ledgers)) {
+      if (!docId || seen.has(docId)) continue;
+      seen.add(docId);
+      const first = Array.isArray(list) ? (list[0] || {}) : {};
+      entries.push({ docId, title: first.docTitle || 'Shared Waymark' });
+    }
+    entries.sort((a, b) => a.title.localeCompare(b.title));
+
+    if (entries.length === 0) {
+      return el('p', { className: 'notif-settings-intro' }, [
+        'No shared Waymarks yet. Once you share or accept a Waymark it appears here so you can opt in to its edit alerts.',
+      ]);
+    }
+
+    const list = el('div', { className: 'notif-waymark-rules' });
+    for (const { docId, title } of entries) {
+      const ov = storage.getWaymarkNotifPref(docId);
+      const enabled = typeof ov.updates === 'boolean'
+        ? ov.updates
+        : (DEFAULT_COLLAB_PREFS.collabUpdates === true);
+      const toggleAttrs = { type: 'checkbox', className: 'notif-waymark-toggle', dataset: { docId } };
+      if (enabled) toggleAttrs.checked = 'checked';
+      const toggle = el('input', toggleAttrs);
+      waymarkToggles[docId] = toggle;
+      list.appendChild(el('label', { className: 'notif-waymark-rule' }, [
+        toggle,
+        el('span', { className: 'notif-waymark-rule-icon' }, ['✏️']),
+        el('span', { className: 'notif-waymark-rule-label' }, [title]),
+      ]));
+    }
+    return list;
+  };
+
+  const perWaymarkSection = el('div', { className: 'notif-waymark-section' }, [
+    el('div', { className: 'notif-sheet-label' }, ['Per-Waymark edit alerts']),
+    el('p', { className: 'notif-settings-intro' }, [
+      'Edit alerts are off by default. Turn them on only for the Waymarks you want to follow closely.',
+    ]),
+    buildPerWaymarkList(),
+  ]);
+
   /* -- Email notifications section -- */
   const emailSection = el('div', { className: 'notif-settings-email' }, [
     el('p', {}, [
@@ -915,6 +1069,9 @@ function _openSettingsModal() {
           settings[key] = toggle.checked;
         }
         storage.setNotificationSettings(settings);
+        for (const [docId, toggle] of Object.entries(waymarkToggles)) {
+          storage.setWaymarkNotifPref(docId, { updates: toggle.checked });
+        }
         overlay.remove();
       },
     },
@@ -934,6 +1091,7 @@ function _openSettingsModal() {
       ]),
       ruleList,
       collabSection,
+      perWaymarkSection,
       emailSection,
       sheetSection,
       rulesSection,
@@ -1108,10 +1266,17 @@ function _renderPanelContent() {
           ? el('div', { className: 'notif-item-actions' }, actionNodes)
           : null;
 
+        const countBadge = n.count > 1
+          ? el('span', { className: 'notif-item-count', title: `${n.count} grouped notifications` }, [String(n.count)])
+          : null;
+
         const card = el('div', {
           className: `notif-item notif-${n.type || 'info'}` + (n.read ? '' : ' notif-item-unread'),
         }, [
-          el('div', { className: 'notif-item-title' }, [titleText]),
+          el('div', { className: 'notif-item-title' }, [
+            countBadge,
+            el('span', { className: 'notif-item-title-text' }, [titleText]),
+          ].filter(Boolean)),
           bodyText ? el('div', { className: 'notif-item-body' }, [bodyText]) : null,
           actionsBar,
         ].filter(Boolean));
@@ -1209,20 +1374,25 @@ function initBell() {
 
     document.addEventListener('waymark:peer-notification', (e) => {
       const m = e.detail || {};
+      const from = String(m.from || m.name || '').toLowerCase();
+      const isAgent = m.agent === true || from.includes('agent') || from.endsWith('@waymark.internal')
+        || String(m.notifType || '').toLowerCase() === 'agent';
+      const type = isAgent ? 'agent' : (m.notifType || 'info');
+      if (!isCategoryEnabled(type, m.sheetId || '')) return;
       addNotification({
-        title: m.title || 'Peer Alert',
+        title: m.title || (isAgent ? 'AI agent update' : 'Peer Alert'),
         body: m.body || m.message || '',
-        type: m.notifType || 'info',
-        from: m.name || 'Peer',
-        source: m.name || 'Peer',
+        type,
+        from: m.name || (isAgent ? 'AI agent' : 'Peer'),
+        source: m.name || (isAgent ? 'AI agent' : 'Peer'),
         sheetId: m.sheetId || '',
+        docTitle: m.docTitle || '',
       });
     });
 
     const handlePeerSheetUpdate = (m) => {
       if (!m || !m.sheetId) return;
-      const prefs = storage.getNotificationSettings();
-      if (prefs.collabUpdates === false) return;
+      if (!isCategoryEnabled('update', m.sheetId)) return;
       if (storage.isShareRejected(m.sheetId)) return;
       const me = (api.auth.getUser?.()?.email || '').trim().toLowerCase();
       const actor = String(m.from || m.name || '').trim().toLowerCase();
@@ -1306,6 +1476,7 @@ export {
   getUnreadCount,
   init,
   initBell,
+  isCategoryEnabled,
   markAllRead,
   pollNotificationSheet,
   refreshBell,

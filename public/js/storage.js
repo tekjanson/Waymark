@@ -596,6 +596,45 @@ function getAllNotificationRules() {
   return get('notification_rules') || {};
 }
 
+/* --- Per-Waymark notification preferences --- */
+/**
+ * Per-sheet overrides for which notification categories push alerts.
+ * Shape: { [sheetId]: { updates?: boolean, chat?: boolean } }.
+ * A missing key (or missing category) means "inherit the global default".
+ * @returns {Object}
+ */
+function getAllWaymarkNotifPrefs() {
+  return get('waymark_notif_prefs') || {};
+}
+/**
+ * Get the per-waymark override for a single sheet.
+ * @param {string} sheetId
+ * @returns {{ updates?: boolean, chat?: boolean }} empty object when unset
+ */
+function getWaymarkNotifPref(sheetId) {
+  if (!sheetId) return {};
+  const all = getAllWaymarkNotifPrefs();
+  return all[sheetId] || {};
+}
+/**
+ * Merge a per-waymark override. Passing `null`/`undefined` for a category
+ * removes that override so it falls back to the global default.
+ * @param {string} sheetId
+ * @param {{ updates?: boolean|null, chat?: boolean|null }} pref
+ */
+function setWaymarkNotifPref(sheetId, pref) {
+  if (!sheetId) return;
+  const all = getAllWaymarkNotifPrefs();
+  const next = { ...(all[sheetId] || {}) };
+  for (const [k, v] of Object.entries(pref || {})) {
+    if (v === null || v === undefined) delete next[k];
+    else next[k] = Boolean(v);
+  }
+  if (Object.keys(next).length === 0) delete all[sheetId];
+  else all[sheetId] = next;
+  set('waymark_notif_prefs', all);
+}
+
 /* --- Bilateral sharing cursors (last-seen row counts per shared sheet) --- */
 function getBilateralCursors() {
   return get('bilateral_cursors') || {};
@@ -992,6 +1031,9 @@ export {
   getNotificationRules,
   setNotificationRules,
   getAllNotificationRules,
+  getAllWaymarkNotifPrefs,
+  getWaymarkNotifPref,
+  setWaymarkNotifPref,
   getBilateralCursors,
   getBilateralCursor,
   setBilateralCursor,
