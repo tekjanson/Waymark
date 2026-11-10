@@ -108,7 +108,7 @@
 #wayboard-root.mode-9 { --bg:#0d0b12; --panel:#15121d; --card:#1c1827; --border:#2d2740; --accent:#a855f7; --radius:16px; }
 #wayboard-root.mode-10 { --bg:#0b1020; --panel:#111833; --card:#16203f; --border:#243357; --accent:#60a5fa; --radius:14px; }
 #wayboard-root.mode-11 { --bg:#faf7f0; --panel:#fffdf8; --card:#fffdf8; --border:#e6ddc9; --text:#211c13; --muted:#6f6552; --accent:#b45309; --radius:6px; --font: Georgia, 'Times New Roman', serif; }
-#wayboard-root.mode-12 { --bg:#060708; --panel:#0c0e10; --card:#111417; --border:#20262c; --accent:#f59e0b; --green:#22c55e; --text:#e8edf2; --muted:#7a8894; --radius:3px; --font:'JetBrains Mono', ui-monospace, monospace; }
+#wayboard-root.mode-12 { --bg:#060708; --panel:#0c0e10; --card:#111417; --border:#1a2a1d; --accent:#39ff14; --green:#39ff14; --text:#d9ffd2; --muted:#81d78f; --radius:3px; --font:'JetBrains Mono', ui-monospace, monospace; }
 
 /* ---------- Desktop layouts (>= 769px) ---------- */
 @media (min-width: 769px) {
@@ -763,4 +763,3 @@ html[data-theme] #wayboard-root .btn-muted {
   #wayboard-root#wayboard-root .wayboard-data-row { padding: 8px; }
   #wayboard-root#wayboard-root .wayboard-metric { padding: 8px; }
 }
-

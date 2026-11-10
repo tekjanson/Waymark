@@ -1984,19 +1984,51 @@ html.waymark-android #search-input {
   pointer-events: none;
   filter: grayscale(0.3);
 }
-.theme-presets { display: flex; flex-wrap: wrap; gap: 8px; }
+.theme-presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .theme-preset {
-  width: 34px; height: 34px;
-  border-radius: 9px;
-  border: 2px solid var(--color-border);
+  width: 100%;
+  min-height: 58px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
   cursor: pointer;
-  padding: 0;
-  transition: transform 120ms ease, border-color var(--transition), box-shadow var(--transition);
+  padding: 8px;
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: transform 120ms ease, border-color var(--transition), box-shadow var(--transition), background var(--transition);
 }
 .theme-preset:hover { transform: translateY(-2px); }
 .theme-preset.is-active {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 2px var(--color-primary-light);
+}
+.theme-preset-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.theme-preset-name {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.theme-preset-base {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+.theme-preset-swatch {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
 }
 .theme-swatches {
   display: grid;
@@ -2069,6 +2101,50 @@ html.waymark-android #search-input {
 .theme-preview-text { font-size: 0.9rem; color: var(--color-text); }
 .theme-preview-muted { font-size: 0.82rem; color: var(--color-text-muted); margin-top: 3px; }
 .theme-preview-link { color: var(--color-primary); font-weight: 600; }
+.theme-builder-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.theme-code {
+  width: 100%;
+  min-height: 92px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: 0.78rem/1.4 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  padding: 8px 10px;
+  resize: vertical;
+}
+.theme-contrast {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.theme-contrast-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.theme-contrast-label {
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+}
+.theme-contrast-value {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+.theme-contrast-value.pass { color: var(--color-success); }
+.theme-contrast-value.warn { color: var(--color-warning); }
+.theme-contrast-value.fail { color: var(--color-error); }
 
 .settings-profile {
   display: flex; align-items: center; gap: 16px;
@@ -2689,6 +2765,7 @@ html.waymark-android #search-input {
     gap: 18px;
     padding: 14px 16px 20px;
   }
+  .theme-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .theme-swatches { grid-template-columns: 1fr; }
   .settings-profile {
     padding: 14px 16px;

@@ -2860,6 +2860,66 @@ const THEME_SWATCH_FIELDS = [
 let _builderTheme = null;
 let _builderSaveTimer = null;
 
+function hexToRgb(hex) {
+  const raw = String(hex || '').trim().replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(raw)) return null;
+  return {
+    r: parseInt(raw.slice(0, 2), 16),
+    g: parseInt(raw.slice(2, 4), 16),
+    b: parseInt(raw.slice(4, 6), 16),
+  };
+}
+
+function relativeLuminance({ r, g, b }) {
+  const normalize = (n) => {
+    const v = n / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  const R = normalize(r);
+  const G = normalize(g);
+  const B = normalize(b);
+  return (0.2126 * R) + (0.7152 * G) + (0.0722 * B);
+}
+
+function contrastRatio(hexA, hexB) {
+  const a = hexToRgb(hexA);
+  const b = hexToRgb(hexB);
+  if (!a || !b) return 1;
+  const l1 = relativeLuminance(a);
+  const l2 = relativeLuminance(b);
+  const high = Math.max(l1, l2);
+  const low = Math.min(l1, l2);
+  return (high + 0.05) / (low + 0.05);
+}
+
+function contrastLabel(ratio) {
+  if (ratio >= 7) return { text: `AAA · ${ratio.toFixed(2)}:1`, cls: 'pass' };
+  if (ratio >= 4.5) return { text: `AA · ${ratio.toFixed(2)}:1`, cls: 'pass' };
+  if (ratio >= 3) return { text: `Large text only · ${ratio.toFixed(2)}:1`, cls: 'warn' };
+  return { text: `Low contrast · ${ratio.toFixed(2)}:1`, cls: 'fail' };
+}
+
+function serializeThemeCode(themeState) {
+  const out = { enabled: Boolean(themeState.enabled) };
+  for (const key of theme.THEME_FIELDS) out[key] = themeState[key];
+  return JSON.stringify(out, null, 2);
+}
+
+function updateThemeContrast() {
+  const textEl = document.getElementById('theme-contrast-text-bg');
+  const accentEl = document.getElementById('theme-contrast-accent-bg');
+  if (!textEl || !accentEl || !_builderTheme) return;
+
+  const textRatio = contrastRatio(_builderTheme.text, _builderTheme.bg);
+  const accentRatio = contrastRatio(_builderTheme.accent, _builderTheme.bg);
+  const textLabel = contrastLabel(textRatio);
+  const accentLabel = contrastLabel(accentRatio);
+  textEl.textContent = textLabel.text;
+  accentEl.textContent = accentLabel.text;
+  textEl.className = `theme-contrast-value ${textLabel.cls}`;
+  accentEl.className = `theme-contrast-value ${accentLabel.cls}`;
+}
+
 /** Persist the working theme: localStorage mirror immediately (so reloads are
  *  zero-flash), Drive save debounced. */
 function persistBuilderTheme() {
@@ -2893,6 +2953,9 @@ function syncBuilderInputs() {
   if (radiusVal) radiusVal.textContent = `${_builderTheme.radius}px`;
   const font = document.getElementById('theme-font');
   if (font) font.value = _builderTheme.font;
+  const code = document.getElementById('theme-code');
+  if (code && document.activeElement !== code) code.value = serializeThemeCode(_builderTheme);
+  updateThemeContrast();
 
   // Highlight the preset chip that matches the current theme (if any).
   settingsModal.querySelectorAll('.theme-preset').forEach(chip => {
@@ -2936,7 +2999,14 @@ function wireThemeBuilder() {
       'aria-label': `Preset ${p.name}`,
     });
     chip.dataset.preset = id;
-    chip.style.background = `linear-gradient(135deg, ${p.bg} 0 55%, ${p.accent} 55% 100%)`;
+    chip.appendChild(el('div', { className: 'theme-preset-top' }, [
+      el('span', { className: 'theme-preset-name' }, [p.name]),
+      el('span', { className: 'theme-preset-base' }, [p.base]),
+    ]));
+    chip.appendChild(el('div', {
+      className: 'theme-preset-swatch',
+      style: `background: linear-gradient(90deg, ${p.bg} 0 45%, ${p.surface} 45% 70%, ${p.accent} 70% 100%);`,
+    }));
     chip.addEventListener('click', () => {
       _builderTheme = theme.normalizeTheme({ ...theme.PALETTES[id], enabled: true, preset: Number(id) });
       commitBuilderTheme();
@@ -3007,6 +3077,59 @@ function wireThemeBuilder() {
     font.addEventListener('change', () => {
       _builderTheme.font = font.value;
       commitBuilderTheme();
+      syncBuilderInputs();
+    });
+  }
+
+  const loadLayout = document.getElementById('theme-load-layout-preset');
+  if (loadLayout) {
+    loadLayout.addEventListener('click', () => {
+      const presetId = wayboard.resolveLayout(storage.getHomeTemplateMode());
+      _builderTheme = theme.normalizeTheme({ ...theme.PALETTES[presetId], enabled: true, preset: presetId });
+      commitBuilderTheme();
+      syncBuilderInputs();
+      showToast(`Loaded ${theme.PALETTES[presetId].name} as your starting point`, 'success');
+    });
+  }
+
+  const copyCode = document.getElementById('theme-copy-code');
+  if (copyCode) {
+    copyCode.addEventListener('click', async () => {
+      const payload = serializeThemeCode(_builderTheme);
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(payload);
+          showToast('Theme code copied', 'success');
+          return;
+        }
+      } catch {
+        // Fall through to selection fallback.
+      }
+      const code = document.getElementById('theme-code');
+      if (code) {
+        code.focus();
+        code.select();
+      }
+      showToast('Copied failed in this browser — press Ctrl/Cmd+C in the code box', 'error');
+    });
+  }
+
+  const applyCode = document.getElementById('theme-apply-code');
+  if (applyCode) {
+    applyCode.addEventListener('click', () => {
+      const code = document.getElementById('theme-code');
+      if (!code) return;
+      let parsed = null;
+      try {
+        parsed = JSON.parse(code.value);
+      } catch {
+        showToast('Theme code is not valid JSON', 'error');
+        return;
+      }
+      _builderTheme = theme.normalizeTheme({ ..._builderTheme, ...parsed, enabled: true });
+      commitBuilderTheme();
+      syncBuilderInputs();
+      showToast('Theme code applied', 'success');
     });
   }
 
