@@ -717,6 +717,54 @@ test('pollNotificationSheet syncs Active rows from the connected Notification Sh
   await expect(page.locator('.notif-badge')).toHaveText('3');
 });
 
+test('a rules-schema notification sheet is NOT imported into the bell', async ({ page }) => {
+  await setupApp(page);
+  await page.waitForSelector('.notif-bell', { timeout: 5000 });
+  const res = await page.evaluate(async () => {
+    const notifications = await import('/js/notifications.js');
+    const storage = await import('/js/storage.js');
+    storage.setNotifSheetId('sheet-082'); // Event/Condition/Title/Body/Priority/Enabled
+    const added = await notifications.pollNotificationSheet();
+    return { added, unread: notifications.getUnreadCount() };
+  });
+  // Rule definitions must never flood the bell.
+  expect(res.added).toBe(0);
+  expect(res.unread).toBe(0);
+});
+
+test('connecting a rules-schema sheet purges previously imported rows', async ({ page }) => {
+  await setupApp(page);
+  await page.waitForSelector('.notif-bell', { timeout: 5000 });
+  const ids = await page.evaluate(async () => {
+    const notifications = await import('/js/notifications.js');
+    const storage = await import('/js/storage.js');
+    storage.setNotifications([
+      { id: 'notif-sheet:sheet-082:1:agent', key: 'notif-sheet:sheet-082:1:agent', title: 'agent', body: 'Active', type: 'info', read: false },
+      { id: 'chat:keep-me', key: 'chat:keep-me', title: '14 new messages', body: 'hi', type: 'chat', read: false },
+    ]);
+    storage.setNotifSheetId('sheet-082');
+    await notifications.pollNotificationSheet();
+    return storage.getNotifications().map(n => n.id);
+  });
+  expect(ids).toContain('chat:keep-me');
+  expect(ids.some(id => id.startsWith('notif-sheet:sheet-082:'))).toBe(false);
+});
+
+test('bell alerts are NOT mirrored into a rules-schema notification sheet', async ({ page }) => {
+  await setupApp(page);
+  await page.waitForSelector('.notif-bell', { timeout: 5000 });
+  const appended = await page.evaluate(async () => {
+    const notifications = await import('/js/notifications.js');
+    const storage = await import('/js/storage.js');
+    storage.setNotifSheetId('sheet-082');
+    notifications.addNotification({ title: 'Test alert', body: 'hello', type: 'info' });
+    await notifications.flushNotificationSheetWrites();
+    return (window.__WAYMARK_RECORDS || [])
+      .filter(r => r.type === 'row-append' && r.spreadsheetId === 'sheet-082').length;
+  });
+  expect(appended).toBe(0);
+});
+
 test('a shared Waymark pushed into the connected sheet surfaces Accept/Reject in the bell', async ({ page }) => {
   await setupApp(page);
   await page.waitForSelector('.notif-bell', { timeout: 5000 });

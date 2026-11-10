@@ -357,12 +357,71 @@ async function ensureSheet() {
 }
 
 /**
+ * A genuine push-history log mirrors the bell: it has Title + Status + Type
+ * columns (the canonical Push Notification Sheet). A settings/rules sheet
+ * (Event/Condition/Enabled) must never be synced to or from the bell.
+ * @param {string[]} lowerHeaders already lowercased/trimmed header cells
+ * @returns {boolean}
+ */
+function _isPushHistoryHeaders(lowerHeaders) {
+  const has = (re) => lowerHeaders.some(h => re.test(h));
+  return has(/\btitle\b/) && has(/\bstatus\b/) && has(/\btype\b/);
+}
+
+/** Cache so we don't re-read the connected sheet's headers on every alert. */
+let _logSchemaCache = { sheetId: '', isLog: null };
+
+/**
+ * Whether the currently connected notification sheet is a push-history log
+ * (safe to two-way sync) vs a settings/rules sheet (must not be synced).
+ * @returns {Promise<boolean>}
+ */
+async function _connectedSheetIsLog() {
+  const sheetId = storage.getNotifSheetId();
+  if (!sheetId) return false;
+  if (_logSchemaCache.sheetId === sheetId && _logSchemaCache.isLog !== null) {
+    return _logSchemaCache.isLog;
+  }
+  try {
+    const data = await api.sheets.getSpreadsheet(sheetId);
+    const header = (data.tabs && data.tabs[0] && data.tabs[0].values && data.tabs[0].values[0])
+      || (data.values && data.values[0]) || [];
+    const isLog = _isPushHistoryHeaders(header.map(h => (h || '').toLowerCase().trim()));
+    _logSchemaCache = { sheetId, isLog };
+    return isLog;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Remove bell notifications that were previously imported from a given sheet.
+ * Used to clean up rows mis-imported from a settings/rules sheet.
+ * @param {string} sheetId
+ */
+function _purgeImportedRows(sheetId) {
+  const items = storage.getNotifications();
+  const prefix = `notif-sheet:${sheetId}:`;
+  const kept = items.filter(n => !(typeof n.id === 'string' && n.id.startsWith(prefix)));
+  if (kept.length !== items.length) {
+    storage.setNotifications(kept);
+    _refreshBellBadge();
+    if (_panel && !_panel.classList.contains('hidden')) _renderPanelContent();
+  }
+}
+
+/**
  * Append newly generated alerts to the user's configured Push Notification Sheet.
  * @param {Array<Object>} alerts
  */
 async function _appendAlertsToSheet(alerts) {
   const sheetId = storage.getNotifSheetId();
   if (!sheetId || !alerts || alerts.length === 0) return;
+
+  // Only mirror into a genuine push-history log (Title + Status + Type columns).
+  // A settings/rules sheet (Event/Condition/Enabled) is config, not a log —
+  // writing the bell's rows into it corrupts the user's notification rules.
+  if (!(await _connectedSheetIsLog())) return;
 
   const rows = alerts
     .filter(a => a && a.sheetId !== sheetId)
@@ -415,6 +474,14 @@ async function pollNotificationSheet() {
     const sheetIdx   = lower.findIndex(h => /\bsheet\b/.test(h));
 
     if (titleIdx < 0) return 0;
+
+    // Only a genuine push-history log (Title + Status + Type) syncs with the
+    // bell. A settings/rules sheet is config — purge anything we previously
+    // mis-imported from it and stop, so rule definitions never flood the bell.
+    if (statusIdx < 0 || typeIdx < 0) {
+      _purgeImportedRows(notifSheetId);
+      return 0;
+    }
 
     let added = 0;
     let statusUpdated = false;
