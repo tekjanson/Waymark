@@ -1,0 +1,13 @@
+{
+  "id": "sheet-082",
+  "title": "Waymark Notifications",
+  "sheetTitle": "Sheet1",
+  "values": [
+    ["Event", "Condition", "Title", "Body", "Priority", "Enabled"],
+    ["DISPATCH", "always", "Dispatching: {{agentName}}", "{{taskTitle}}", "normal", "yes"],
+    ["TASK_QA", "always", "Task in QA", "{{delta}} task(s) ready for review ({{qaCount}} total)", "normal", "yes"],
+    ["TASK_DONE", "always", "Task complete", "{{delta}} task(s) done ({{doneCount}} total)", "high", "yes"],
+    ["BLOCKED", "always", "Task blocked", "{{task}} — {{reason}}", "high", "yes"],
+    ["ORCH_ERROR", "always", "Orchestrator error", "{{error}}", "high", "yes"]
+  ]
+}

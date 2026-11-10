@@ -29,11 +29,29 @@ object NotificationHelper {
 
     /* ---------- Notification IDs ---------- */
 
-    /** Auto-incrementing ID so each message gets a distinct notification. */
+    /** Auto-incrementing ID so each ungrouped message gets a distinct notification. */
     private val _nextId = AtomicInteger(2000)
+
+    /** Base ID range for grouped notifications (one stable slot per group key). */
+    private const val GROUP_ID_BASE = 10_000
+
+    /** Live count per grouped notification slot so repeats read as "N updates". */
+    private val _groupCounts = java.util.concurrent.ConcurrentHashMap<Int, Int>()
 
     /** Fixed ID for the foreground service persistent notification. */
     const val NOTIFICATION_ID_SERVICE = 1001
+
+    /** Stable notification slot for a group key so repeats replace, not stack. */
+    private fun groupSlot(groupKey: String): Int =
+        GROUP_ID_BASE + (Math.abs(groupKey.hashCode()) % 2000)
+
+    /**
+     * Reset the running count for a group once its notification is dismissed or
+     * tapped, so the next burst starts fresh at "1".
+     */
+    fun resetGroup(groupKey: String) {
+        if (groupKey.isNotBlank()) _groupCounts.remove(groupSlot(groupKey))
+    }
 
     /* ---------- Channel creation (call once at app start) ---------- */
 
@@ -74,11 +92,16 @@ object NotificationHelper {
      * Posts a notification for a message received from a peer or the
      * orchestrator. Tapping it opens the main Waymark activity.
      *
-     * @param context Application context
-     * @param title   Notification title (already truncated by caller)
-     * @param body    Notification body  (already truncated by caller)
+     * When [groupKey] is non-blank, repeated messages for the same key reuse one
+     * stable notification slot — ten edits to the same Waymark collapse into a
+     * single "N updates" notification instead of ten separate ones.
+     *
+     * @param context  Application context
+     * @param title    Notification title (already truncated by caller)
+     * @param body     Notification body  (already truncated by caller)
+     * @param groupKey Optional stable key (e.g. a sheet ID) used to coalesce
      */
-    fun showMessage(context: Context, title: String, body: String) {
+    fun showMessage(context: Context, title: String, body: String, groupKey: String = "") {
         val launchIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
@@ -89,15 +112,36 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notification = NotificationCompat.Builder(context, CHANNEL_MESSAGES)
+        val grouped = groupKey.isNotBlank()
+        val notifId = if (grouped) groupSlot(groupKey) else _nextId.getAndIncrement()
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_MESSAGES)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title.ifBlank { "Waymark" })
-            .setContentText(body)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .build()
+
+        if (grouped) {
+            val count = (_groupCounts[notifId] ?: 0) + 1
+            _groupCounts[notifId] = count
+            builder.setGroup(groupKey)
+            if (count > 1) {
+                val summary = "$count updates"
+                builder.setContentText(summary)
+                    .setStyle(NotificationCompat.BigTextStyle().bigText("$summary\n$body"))
+                    .setNumber(count)
+                    .setOnlyAlertOnce(true)
+            } else {
+                builder.setContentText(body)
+                    .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            }
+        } else {
+            builder.setContentText(body)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+        }
+
+        val notification = builder.build()
 
         // Acquire a brief partial wake lock BEFORE posting so the CPU stays
         // awake long enough to render the notification in the status bar.
@@ -112,7 +156,7 @@ object NotificationHelper {
 
         try {
             NotificationManagerCompat.from(context)
-                .notify(_nextId.getAndIncrement(), notification)
+                .notify(notifId, notification)
         } catch (e: SecurityException) {
             Log.w(TAG, "POST_NOTIFICATIONS denied — notification dropped: title=\"$title\"")
         }

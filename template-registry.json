@@ -963,12 +963,8 @@
         "notification-waymark"
       ],
       "interactive": true,
-      "interactionType": "status-cycle",
-      "interactionStates": [
-        "Active",
-        "Read",
-        "Dismissed"
-      ],
+      "interactionType": "settings",
+      "interactionStates": [],
       "exampleCount": 1
     },
     {

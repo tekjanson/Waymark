@@ -167,8 +167,14 @@ class WaymarkBridge(private val context: Context) {
             if (type == "waymark-notification" || type == "orchestrator-alert") {
                 val title = obj.optString("title", "Waymark")
                 val body = obj.optString("body", obj.optString("message", ""))
+                // Group native notifications per Waymark (or sender) so repeated
+                // updates collapse into one "N updates" notification.
+                val groupKey = obj.optString(
+                    "sheetId",
+                    obj.optString("group", obj.optString("from", ""))
+                )
                 if (body.isNotBlank()) {
-                    NotificationHelper.showMessage(context, title.take(80), body.take(240))
+                    NotificationHelper.showMessage(context, title.take(80), body.take(240), groupKey)
                 }
             }
         } catch (ignored: Exception) {

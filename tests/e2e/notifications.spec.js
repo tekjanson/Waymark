@@ -2,6 +2,18 @@
 const { test, expect } = require('@playwright/test');
 const { setupApp, navigateToSheet } = require('../helpers/test-utils');
 
+/**
+ * Built-in sheet rules (kanban/budget/checklist) are OFF by default now, so
+ * tests that need those alerts opt in explicitly before navigating.
+ */
+async function enableBuiltInRules(page) {
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_notification_settings', JSON.stringify({
+      kanbanOverdue: true, kanbanP0: true, budgetOverspend: true, checklistOverdue: true,
+    }));
+  });
+}
+
 /* ---------- Notification Bell ---------- */
 
 test('notification bell renders in top bar', async ({ page }) => {
@@ -42,6 +54,7 @@ test('clicking bell again closes notification panel', async ({ page }) => {
 
 test('loading kanban sheet with overdue tasks shows notification badge', async ({ page }) => {
   await setupApp(page);
+  await enableBuiltInRules(page);
   await navigateToSheet(page, 'sheet-028');
   await page.waitForSelector('.kanban-card', { timeout: 5000 });
 
@@ -53,6 +66,7 @@ test('loading kanban sheet with overdue tasks shows notification badge', async (
 
 test('kanban overdue notification appears in panel', async ({ page }) => {
   await setupApp(page);
+  await enableBuiltInRules(page);
   await navigateToSheet(page, 'sheet-028');
   await page.waitForSelector('.kanban-card', { timeout: 5000 });
 
@@ -68,6 +82,7 @@ test('kanban overdue notification appears in panel', async ({ page }) => {
 
 test('kanban P0 notification appears in panel', async ({ page }) => {
   await setupApp(page);
+  await enableBuiltInRules(page);
   await navigateToSheet(page, 'sheet-028');
   await page.waitForSelector('.kanban-card', { timeout: 5000 });
 
@@ -80,6 +95,7 @@ test('kanban P0 notification appears in panel', async ({ page }) => {
 
 test('clicking clear all removes all notifications', async ({ page }) => {
   await setupApp(page);
+  await enableBuiltInRules(page);
   await navigateToSheet(page, 'sheet-028');
   await page.waitForSelector('.kanban-card', { timeout: 5000 });
 
@@ -101,6 +117,7 @@ test('notification panel shows clear all button', async ({ page }) => {
 
 test('clicking notification item navigates to sheet', async ({ page }) => {
   await setupApp(page);
+  await enableBuiltInRules(page);
   await navigateToSheet(page, 'sheet-028');
   await page.waitForSelector('.kanban-card', { timeout: 5000 });
 
@@ -120,6 +137,7 @@ test('clicking notification item navigates to sheet', async ({ page }) => {
 
 test('opening notification panel marks all as read', async ({ page }) => {
   await setupApp(page);
+  await enableBuiltInRules(page);
   await navigateToSheet(page, 'sheet-028');
   await page.waitForSelector('.kanban-card', { timeout: 5000 });
 
@@ -163,17 +181,33 @@ test('notification settings shows toggle for each rule', async ({ page }) => {
   await expect(rules).toHaveCount(4);
 });
 
-test('notification settings toggles are checked by default', async ({ page }) => {
+test('built-in rule toggles are unchecked by default', async ({ page }) => {
   await setupApp(page);
   await page.click('.notif-bell');
   await page.waitForSelector('.notif-panel:not(.hidden)', { timeout: 3000 });
   await page.click('.notif-settings-btn');
   await page.waitForSelector('#notif-settings-modal', { timeout: 3000 });
+  // Sheet-rule alerts default OFF so they never bury what matters.
   const toggles = page.locator('.notif-settings-toggle');
   const count = await toggles.count();
   for (let i = 0; i < count; i++) {
-    await expect(toggles.nth(i)).toBeChecked();
+    await expect(toggles.nth(i)).not.toBeChecked();
   }
+});
+
+test('new-shared-Waymarks is the only collab toggle on by default', async ({ page }) => {
+  await setupApp(page);
+  await page.evaluate(() => localStorage.removeItem('waymark_notification_settings'));
+  await page.reload();
+  await page.click('.notif-bell');
+  await page.waitForSelector('.notif-panel:not(.hidden)', { timeout: 3000 });
+  await page.click('.notif-settings-btn');
+  await page.waitForSelector('#notif-settings-modal', { timeout: 3000 });
+  // Shares, chat and agent default on; edit updates default off.
+  await expect(page.locator('.notif-collab-toggle[data-collab-key="collabShares"]')).toBeChecked();
+  await expect(page.locator('.notif-collab-toggle[data-collab-key="collabChat"]')).toBeChecked();
+  await expect(page.locator('.notif-collab-toggle[data-collab-key="collabAgent"]')).toBeChecked();
+  await expect(page.locator('.notif-collab-toggle[data-collab-key="collabUpdates"]')).not.toBeChecked();
 });
 
 test('notification settings shows Google Sheets email link', async ({ page }) => {
@@ -230,4 +264,90 @@ test('disabling kanban overdue rule suppresses overdue notifications', async ({ 
     const text = await items.nth(i).textContent();
     expect(text).not.toContain('overdue');
   }
+});
+
+/* ---------- Grouping & per-Waymark configuration ---------- */
+
+test('repeated shared-Waymark edits collapse into one grouped notification', async ({ page }) => {
+  await setupApp(page);
+
+  // Opt in to edit alerts for this one Waymark (edits are off by default).
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_waymark_notif_prefs', JSON.stringify({
+      'sheet-grp': { updates: true },
+    }));
+  });
+
+  // Fire ten edits for the same Waymark.
+  await page.evaluate(() => {
+    for (let i = 0; i < 10; i++) {
+      document.dispatchEvent(new CustomEvent('waymark:peer-sheet-update', {
+        detail: {
+          sheetId: 'sheet-grp',
+          docTitle: 'Team Board',
+          summary: `Edit ${i}`,
+          from: 'alice@example.com',
+          ts: `${Date.now()}:${i}`,
+        },
+      }));
+    }
+  });
+
+  await page.click('.notif-bell');
+  await page.waitForSelector('.notif-panel:not(.hidden)', { timeout: 3000 });
+
+  // Ten edits → one grouped card showing the count, not ten separate cards.
+  await expect(page.locator('.notif-item')).toHaveCount(1);
+  await expect(page.locator('.notif-item-count')).toContainText('10');
+  await expect(page.locator('.notif-item-title')).toContainText('updates');
+});
+
+test('edit alerts stay silent for Waymarks not opted in', async ({ page }) => {
+  await setupApp(page);
+
+  await page.evaluate(() => {
+    for (let i = 0; i < 3; i++) {
+      document.dispatchEvent(new CustomEvent('waymark:peer-sheet-update', {
+        detail: {
+          sheetId: 'sheet-silent',
+          docTitle: 'Quiet Board',
+          summary: `Edit ${i}`,
+          from: 'bob@example.com',
+          ts: `${Date.now()}:${i}`,
+        },
+      }));
+    }
+  });
+
+  await page.click('.notif-bell');
+  await page.waitForSelector('.notif-panel:not(.hidden)', { timeout: 3000 });
+  await expect(page.locator('.notif-empty')).toBeVisible();
+});
+
+test('per-Waymark edit toggle persists an override', async ({ page }) => {
+  await setupApp(page);
+
+  // Seed a known shared Waymark so it appears in the per-Waymark list.
+  await page.evaluate(() => {
+    localStorage.setItem('waymark_shared_doc_ledgers', JSON.stringify({
+      'sheet-abc': [{ ledgerSheetId: 'led-1', docTitle: 'Budget Q3', contactEmail: 'a@b.com' }],
+    }));
+  });
+
+  await page.click('.notif-bell');
+  await page.waitForSelector('.notif-panel:not(.hidden)', { timeout: 3000 });
+  await page.click('.notif-settings-btn');
+  await page.waitForSelector('#notif-settings-modal', { timeout: 3000 });
+
+  const toggle = page.locator('.notif-waymark-toggle[data-doc-id="sheet-abc"]');
+  await expect(toggle).toBeVisible();
+  await expect(toggle).not.toBeChecked();
+  await toggle.check();
+  await page.click('.notif-settings-save');
+  await expect(page.locator('#notif-settings-modal')).toHaveCount(0);
+
+  const prefs = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('waymark_waymark_notif_prefs'))
+  );
+  expect(prefs['sheet-abc'].updates).toBe(true);
 });

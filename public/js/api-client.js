@@ -174,6 +174,7 @@ async function loadMockSheet(sheetId) {
     'sheet-079': 'knowledge-article-comments',
     'sheet-063': 'knowledge-no-comments-id',
     'sheet-046': 'notification-waymark',
+    'sheet-082': 'notification-rules',
     'sheet-049': 'guide-composting',
     'sheet-047': 'iot-sensor-dashboard',
     'sheet-048': 'iot-sensor-log',

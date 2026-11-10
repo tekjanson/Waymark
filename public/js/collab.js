@@ -15,7 +15,7 @@
 import { api } from './api-client.js';
 import * as userData from './user-data.js';
 import * as storage from './storage.js';
-import { addNotification, refreshBell, flushNotificationSheetWrites, pollNotificationSheet, setShareActionDelegate } from './notifications.js';
+import { addNotification, refreshBell, flushNotificationSheetWrites, pollNotificationSheet, setShareActionDelegate, isCategoryEnabled } from './notifications.js';
 import { discoverDirectory, isCandidateContactsBook, extractLedgerSheetId, normalizeContactEmail } from './contacts-picker.js';
 
 /* ---------- Schema ---------- */
@@ -1168,9 +1168,6 @@ function getKnownCollaborators() {
  * @returns {Promise<number>} number of diff notifications pushed
  */
 async function checkSharedSheetDiffs() {
-  const prefs = storage.getNotificationSettings();
-  if (prefs.collabUpdates === false) return 0;
-
   const docMeta = new Map();
   for (const docId of storage.getAcceptedShares()) {
     if (docId) docMeta.set(docId, { docId, title: '', from: 'Collaborator' });
@@ -1189,6 +1186,7 @@ async function checkSharedSheetDiffs() {
   let pushed = 0;
   for (const [docId, meta] of docMeta.entries()) {
     if (storage.isShareRejected(docId)) continue;
+    if (!isCategoryEnabled('update', docId)) continue;
     try {
       const previousDigest = storage.getSheetDigest(docId);
       let fileMeta = null;
@@ -1254,7 +1252,6 @@ async function checkSharedSheetDiffs() {
 async function pollShareLedgers() {
   const me = currentEmail();
   const ledgers = userData.getShareLedgers();
-  const prefs = storage.getNotificationSettings();
   let pushed = 0;
 
   for (const l of ledgers) {
@@ -1291,7 +1288,7 @@ async function pollShareLedgers() {
           }
 
           if (statusVal.startsWith('Updated|')) {
-            if (prefs.collabUpdates === false) continue;
+            if (!isCategoryEnabled('update', docId)) continue;
             const parts = statusVal.split('|');
             const actorEmail = (parts[1] || '').trim().toLowerCase();
             const summary = parts.slice(2).join('|').trim() || 'Updated this Waymark';
@@ -1334,7 +1331,7 @@ async function pollShareLedgers() {
           }
 
           if (statusVal.toLowerCase() === 'rejected') continue;
-          if (prefs.collabShares === false) continue;
+          if (!isCategoryEnabled('share', docId)) continue;
 
           const isForMe = me && (
             sharedWith === me ||
@@ -1377,19 +1374,25 @@ async function pollShareLedgers() {
       const chatCursor = storage.getChatCursor(chatCursorKey);
       if (chatRows.length > chatCursor) {
         for (let i = chatCursor; i < chatRows.length; i++) {
-          if (prefs.collabChat === false) continue;
           const r = chatRows[i];
           const sender = (r.Sender_Email || '').trim().toLowerCase();
           if (!me || !sender || sender === me) continue;
-          const who = l.group ? `${sender.split('@')[0]} (${l.group})` : (l.contactEmail || sender);
+          const isAgent = sender === 'assistant@waymark.internal' || sender.endsWith('@waymark.internal');
+          const notifType = isAgent ? 'agent' : 'chat';
+          if (!isCategoryEnabled(notifType, l.sheetId)) continue;
+          const who = isAgent
+            ? 'AI agent'
+            : (l.group ? `${sender.split('@')[0]} (${l.group})` : (l.contactEmail || sender));
           const notifId = r.Message_ID ? `chat:${l.sheetId}:${r.Message_ID}` : `chat:${l.sheetId}:${i}`;
           const entry = addNotification({
             id: notifId,
-            type: 'chat',
-            title: `💬 ${who}`,
+            type: notifType,
+            icon: isAgent ? '🤖' : '💬',
+            title: isAgent ? `🤖 ${who}` : `💬 ${who}`,
             body: r.Message_Text || 'Sent a message in The Wayside',
             sheetId: l.sheetId,
             ledgerSheetId: l.sheetId,
+            docTitle: l.docTitle || '',
             from: sender,
             group: l.group || '',
           });
