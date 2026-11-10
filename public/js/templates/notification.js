@@ -30,18 +30,24 @@ const definition = {
 
   detect(lower) {
     const has = (re) => lower.some(h => re.test(h));
-    const title    = has(/\btitle\b/);
-    const message  = has(/\bmessage\b|\bbody\b/);
-    const status   = has(/\bstatus\b/);
-    const type     = has(/\btype\b/);
-    const source   = has(/\bsource\b/);
-    const icon     = has(/\bicon\b/);
-    const created  = has(/\bcreated\b/);
-    const expires  = has(/\bexpires?\b/);
-    const sheetRef = has(/\bsheet\b/);
+    const title     = has(/\btitle\b/);
+    const message   = has(/\bmessage\b|\bbody\b/);
+    const status    = has(/\bstatus\b/);
+    const type      = has(/\btype\b/);
+    const source    = has(/\bsource\b/);
+    const icon      = has(/\bicon\b/);
+    const created   = has(/\bcreated\b/);
+    const expires   = has(/\bexpires?\b/);
+    const sheetRef  = has(/\bsheet\b/);
+    const event     = has(/\bevent\b|\btrigger\b/);
+    const condition = has(/\bcondition\b/);
+    const enabled   = has(/\benabled\b/);
 
-    // Canonical Waymark notification sheet: Title + Message + Status + Type.
+    // Canonical Waymark push-history sheet: Title + Message + Status + Type.
     if (title && message && status && type) return true;
+    // Notification RULES schema (the sheet Waymark's own orchestrator writes):
+    // Event + Condition + Enabled, with a Title/Body payload column.
+    if (event && condition && enabled && (title || message)) return true;
     // Push-history variants that are still unmistakably notification sheets —
     // the Source+Sheet reference pair and an Icon column are notification-specific,
     // so a sheet missing Status/Type but carrying these is still a notification sheet.

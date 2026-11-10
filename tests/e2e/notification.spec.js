@@ -24,18 +24,31 @@ test('detect matches canonical and variant notification sheets, not look-alikes'
     const key = (headers) => detectTemplate(headers).key;
     return {
       canonical: key(['Title', 'Message', 'Type', 'Status', 'Icon', 'Priority', 'Created', 'Expires', 'Source', 'Sheet']),
+      rulesSchema: key(['Event', 'Condition', 'Title', 'Body', 'Priority', 'Enabled']),
       sourceSheetVariant: key(['Title', 'Message', 'Priority', 'Source', 'Sheet']),
       iconVariant: key(['Title', 'Body', 'Icon', 'Status']),
       // Look-alikes that must NOT be captured as notifications:
       blog: key(['Title', 'Doc', 'Author', 'Date', 'Status']),
       genericTitleBody: key(['Title', 'Body']),
+      automation: key(['Workflow', 'Step', 'Action', 'Target', 'Value']),
     };
   });
   expect(result.canonical).toBe('notification');
+  expect(result.rulesSchema).toBe('notification');
   expect(result.sourceSheetVariant).toBe('notification');
   expect(result.iconVariant).toBe('notification');
   expect(result.blog).not.toBe('notification');
   expect(result.genericTitleBody).not.toBe('notification');
+  expect(result.automation).not.toBe('notification');
+});
+
+test('a rules-schema notification sheet renders the settings view, not a checklist', async ({ page }) => {
+  await setupApp(page);
+  await navigateToSheet(page, 'sheet-082');
+  await page.waitForSelector('.notif-settings-inline', { timeout: 5000 });
+  await expect(page.locator('.notif-settings-inline')).toBeVisible();
+  // It must NOT fall back to the checklist renderer.
+  expect(await page.locator('.checklist-row').count()).toBe(0);
 });
 
 test('notification sheet renders the settings control center', async ({ page }) => {
