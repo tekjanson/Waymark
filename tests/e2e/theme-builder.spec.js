@@ -142,3 +142,30 @@ test('Reset to preset turns the custom theme off and restores the layout palette
   await expect(page.locator('html')).toHaveAttribute('data-wm-palette', '1');
   expect(await tokenColor(page, '--color-primary')).toBe('rgb(59, 130, 246)');
 });
+
+test('custom theme also skins Wayboard widgets and wayside surfaces', async ({ page }) => {
+  await setupApp(page, { homeTemplateMode: 1 });
+  await openSettings(page);
+  await page.locator('#settings-theme-custom-enabled').check();
+  await page.evaluate(() => {
+    const input = /** @type {HTMLInputElement} */ (document.getElementById('theme-color-accent'));
+    input.value = '#39ff14';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await page.locator('#settings-modal-close').click();
+  await page.waitForSelector('#wayboard-root', { timeout: 5_000 });
+
+  const wayboardAccent = await page.evaluate(() => {
+    const root = document.getElementById('wayboard-root');
+    if (!root) return '';
+    return getComputedStyle(root).getPropertyValue('--accent').trim();
+  });
+  expect(wayboardAccent).toBe('#39ff14');
+
+  const chipBg = await page.evaluate(() => {
+    const chip = document.querySelector('#wayboard-root .share-chip');
+    if (!chip) return '';
+    return getComputedStyle(chip).backgroundColor;
+  });
+  expect(chipBg).not.toBe('rgba(0, 0, 0, 0)');
+});

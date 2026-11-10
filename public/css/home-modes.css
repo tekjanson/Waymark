@@ -46,6 +46,22 @@
   --color-success: var(--green);
 }
 
+/* When a custom Appearance theme is enabled, it must override the Wayboard's
+   mode palette too (widgets, wayside, cards, menus) instead of only coloring
+   non-home views. */
+html[data-wm-palette="custom"] #wayboard-root {
+  --bg: var(--wm-bg);
+  --panel: var(--wm-panel);
+  --card: var(--wm-card);
+  --border: var(--wm-border);
+  --accent: var(--wm-accent);
+  --green: var(--wm-green, var(--wm-accent));
+  --text: var(--wm-text);
+  --muted: var(--wm-muted);
+  --radius: var(--wm-radius, 8px);
+  --font: var(--wm-font, system-ui, -apple-system, sans-serif);
+}
+
 #wayboard-root .workspace { display: flex; flex: 1; overflow: hidden; position: relative; transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
 #wayboard-root main.canvas { flex: 1; padding: 18px 22px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; position: relative; transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
 #wayboard-root .greeting-banner { background: var(--panel); border: 1px solid var(--border); padding: 12px 18px; border-radius: var(--radius); display: flex; justify-content: space-between; align-items: center; transition: all 0.35s; }
@@ -55,7 +71,7 @@
 #wayboard-root #home-greeting-text { color: var(--text); }
 #wayboard-root .home-greeting-sub { color: var(--muted); }
 #wayboard-root .badge { font-size: 10px; padding: 3px 8px; border-radius: 99px; background: rgba(16,185,129,0.15); color: var(--green); font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
-#wayboard-root .badge.blue { background: rgba(59,130,246,0.15); color: var(--accent); }
+#wayboard-root .badge.blue { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
 #wayboard-root .section-head { display: flex; justify-content: space-between; align-items: center; font-size: 10px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 8px; }
 #wayboard-root .markers-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; transition: all 0.35s; }
 #wayboard-root .marker-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; cursor: pointer; transition: all 0.25s; display: flex; flex-direction: column; position: relative; }
@@ -63,7 +79,7 @@
 #wayboard-root .wayboard-widget-quickmarks .home-action-card { width: 100%; min-width: 0; padding: 8px 6px; gap: 6px; }
 #wayboard-root .wayboard-widget-quickmarks .marker-meta { min-width: 0; width: 100%; }
 #wayboard-root .wayboard-widget-quickmarks .home-action-label { overflow-wrap: anywhere; }
-#wayboard-root .marker-thumb { height: 52px; background: linear-gradient(135deg, rgba(59,130,246,0.22), rgba(236,72,153,0.22)); display: flex; align-items: center; justify-content: center; font-size: 22px; transition: all 0.3s; }
+#wayboard-root .marker-thumb { height: 52px; background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 24%, transparent), color-mix(in srgb, var(--green) 24%, transparent)); display: flex; align-items: center; justify-content: center; font-size: 22px; transition: all 0.3s; }
 #wayboard-root .marker-meta { padding: 9px; font-size: 11px; font-weight: 600; flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
 #wayboard-root .marker-social { display: flex; justify-content: space-between; font-size: 9px; color: var(--muted); margin-top: 5px; }
 #wayboard-root .wayboard-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; flex: 1; transition: all 0.35s; }
@@ -74,10 +90,10 @@
 #wayboard-root .crew-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; background: var(--card); border-radius: 7px; margin-top: 5px; font-size: 11px; cursor: pointer; border: 1px solid transparent; }
 #wayboard-root .crew-row.active,
 #wayboard-root .crew-row:hover { border-color: var(--accent); }
-#wayboard-root .share-chip { font-size: 9px; color: var(--accent); background: rgba(59,130,246,0.15); padding: 2px 5px; border-radius: 4px; }
+#wayboard-root .share-chip { font-size: 9px; color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); padding: 2px 5px; border-radius: 4px; }
 #wayboard-root .avatar-row { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
 #wayboard-root .avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--card); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 10px; cursor: pointer; border: 2px solid var(--green); }
-#wayboard-root .avatar-ai { border-color: var(--accent); background: rgba(59,130,246,0.12); font-size: 14px; }
+#wayboard-root .avatar-ai { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); font-size: 14px; }
 #wayboard-root .chat-box { margin-top: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; line-height: 1.4; flex: 1 1 auto; height: clamp(240px, 42vh, 560px); min-height: 220px; max-height: 80vh; resize: vertical; overflow: auto; }
 #wayboard-root .chat-log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
 
