@@ -1007,30 +1007,54 @@ function renderWaysidePlaceholder(container) {
   container.append(placeholder);
 }
 
-function renderWaysidePoppedOutPlaceholder(container, onDock, target) {
+function renderWaysidePoppedOutPlaceholder(container, onDock, target, widget = _waysideWidget) {
   if (!container) return;
   container.replaceChildren();
+  const currentWidget = widget || _waysideWidget;
   const label = target?.label || 'Wayside';
   const isAi = Boolean(target?.isAgent || target?.contactEmail === 'assistant@waymark.internal');
   const icon = isAi ? '🤖' : '💬';
+  const isBubble = Boolean(currentWidget?.isBubbleMode);
   const placeholder = el('div', { className: 'chat-box wayside-placeholder wayside-popped-out-placeholder', id: 'wayside-placeholder' }, [
     el('div', { className: 'chat-box-head' }, [
       el('b', { id: 'wayside-crew-title' }, [`${icon} ${label}`]),
-      el('span', { className: 'badge blue' }, ['Popped Out']),
+      el('span', { className: 'badge blue' }, [isBubble ? '🫧 Chat Bubble' : 'Popped Out']),
     ]),
-    el('div', { className: 'chat-sheet-line', id: 'wayside-sheet-line' }, ['Floating session active · drag anywhere or truncate to bubble']),
+    el('div', { className: 'chat-sheet-line', id: 'wayside-sheet-line' }, [
+      isBubble
+        ? 'Chat bubble active · click bubble to expand or dock below'
+        : 'Floating session active · drag anywhere or truncate to bubble',
+    ]),
     el('div', {
       className: 'wayside-popped-body',
     }, [
-      el('div', { className: 'wayside-popped-icon' }, ['↗']),
-      el('div', { className: 'wayside-popped-text' }, ['Chat session is floating on screen.']),
-      el('button', {
-        type: 'button',
-        className: 'btn btn-secondary wayside-dock-btn',
-        id: 'wayside-dock-btn',
-        title: 'Dock chat back to the Wayside column',
-        on: { click: onDock },
-      }, ['↙ Dock chat here']),
+      el('div', { className: 'wayside-popped-icon' }, [isBubble ? '🫧' : '↗']),
+      el('div', { className: 'wayside-popped-text' }, [
+        isBubble
+          ? 'Chat session is running as a floating bubble on screen.'
+          : 'Chat session is floating on screen.',
+      ]),
+      el('div', { className: 'wayside-popped-actions' }, [
+        el('button', {
+          type: 'button',
+          className: 'btn btn-secondary wayside-dock-btn',
+          id: 'wayside-dock-btn',
+          title: 'Dock chat back to the Wayside column',
+          on: { click: onDock },
+        }, ['↙ Dock chat here']),
+        el('button', {
+          type: 'button',
+          className: 'btn btn-muted wayside-toggle-bubble-btn',
+          id: 'wayside-toggle-bubble-btn',
+          title: isBubble ? 'Expand chat window' : 'Truncate to chat bubble',
+          on: { click: () => {
+            const w = widget || _waysideWidget;
+            if (w) {
+              w.setBubbleMode(!w.isBubbleMode);
+            }
+          } },
+        }, [isBubble ? '🪟 Expand window' : '🫧 Truncate to bubble']),
+      ]),
     ]),
   ]);
   container.append(placeholder);
@@ -1260,6 +1284,9 @@ async function selectTarget(target, host) {
   // would drop an in-progress call and its media tracks.
   if (!targetChanged && _waysideWidget) {
     highlightWaysideTarget(host, target);
+    if (_waysideWidget.isBubbleMode) {
+      _waysideWidget.setBubbleMode(false);
+    }
     if (!_activeLedgerId) {
       try {
         const ledger = await collab.findExistingShareLedger(target);
@@ -1331,10 +1358,15 @@ async function selectTarget(target, host) {
     onClose: () => deselectTarget(host),
     onPopOutChange: (popped) => {
       if (popped) {
-        renderWaysidePoppedOutPlaceholder(chatContainer, () => widget.dock(), _activeTarget);
+        renderWaysidePoppedOutPlaceholder(chatContainer, () => widget.dock(), _activeTarget, widget);
       } else {
         const ph = chatContainer.querySelector('.wayside-popped-out-placeholder');
         if (ph) ph.remove();
+      }
+    },
+    onBubbleChange: () => {
+      if (widget.isPoppedOut) {
+        renderWaysidePoppedOutPlaceholder(chatContainer, () => widget.dock(), _activeTarget, widget);
       }
     },
     onOpenSheet: () => openSocialSheet(),

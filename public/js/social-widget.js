@@ -263,7 +263,10 @@ export class SocialChatWidget {
     this.bubbleFab = el('div', {
       className: 'social-chat-bubble-fab',
       id: `${idPrefix}-bubble-fab`,
-      title: `${this.titleText} — Click to expand`,
+      role: 'button',
+      tabIndex: 0,
+      title: `${this.titleText} — Click or press Enter to expand`,
+      'aria-label': `${this.titleText} — Click or press Enter to expand chat window`,
     }, [
       this.bubbleIcon,
       this._bubbleUnreadBadge,
@@ -1318,8 +1321,19 @@ export class SocialChatWidget {
     } else if (typeof window !== 'undefined') {
       const winWidth = this._savedSize?.width || 440;
       const winHeight = this._savedSize?.height || Math.min(580, window.innerHeight - 32);
-      const defaultLeft = Math.max(8, window.innerWidth - winWidth - 24);
-      const defaultTop = Math.max(8, window.innerHeight - winHeight - 24);
+      let defaultLeft = Math.max(8, window.innerWidth - winWidth - 24);
+      let defaultTop = Math.max(8, window.innerHeight - winHeight - 24);
+
+      if (this.dockContainer) {
+        try {
+          const dockRect = this.dockContainer.getBoundingClientRect();
+          if (dockRect && dockRect.left > winWidth + 24) {
+            defaultLeft = Math.max(8, dockRect.left - winWidth - 16);
+            defaultTop = Math.max(8, Math.min(window.innerHeight - winHeight - 16, dockRect.top));
+          }
+        } catch {}
+      }
+
       this.setPosition(defaultLeft, defaultTop);
     }
 
@@ -1385,6 +1399,8 @@ export class SocialChatWidget {
       const curLeft = parseFloat(this.root.style.left) || rect.left;
       const curTop = parseFloat(this.root.style.top) || rect.top;
       const curWidth = rect.width || (this._savedSize?.width || 440);
+      this._preBubblePos = { left: curLeft, top: curTop };
+      this._bubbleDragged = false;
 
       // Anchor bubble near top-right where bubble toggle button was located
       const bubbleLeft = Math.max(8, Math.min(window.innerWidth - 68, curLeft + (curWidth - 68)));
@@ -1418,17 +1434,27 @@ export class SocialChatWidget {
         const winHeight = this._savedSize?.height || 580;
         this.setSize(winWidth, winHeight);
 
-        let curLeft = parseFloat(this.root.style.left) || (window.innerWidth - winWidth - 24);
-        let curTop = parseFloat(this.root.style.top) || (window.innerHeight - winHeight - 24);
+        let curLeft, curTop;
+        if (this._preBubblePos && !this._bubbleDragged) {
+          curLeft = this._preBubblePos.left;
+          curTop = this._preBubblePos.top;
+        } else {
+          const curBubbleLeft = parseFloat(this.root.style.left) || (window.innerWidth - 68);
+          const curBubbleTop = parseFloat(this.root.style.top) || 40;
+          curLeft = curBubbleLeft - (winWidth - 68);
+          curTop = curBubbleTop - 4;
+        }
+        this._preBubblePos = null;
+        this._bubbleDragged = false;
 
+        if (curLeft < 8) curLeft = 8;
         if (curLeft + winWidth > window.innerWidth - 8) {
           curLeft = Math.max(8, window.innerWidth - winWidth - 16);
         }
+        if (curTop < 8) curTop = 8;
         if (curTop + winHeight > window.innerHeight - 8) {
           curTop = Math.max(8, window.innerHeight - winHeight - 16);
         }
-        curLeft = Math.max(8, curLeft);
-        curTop = Math.max(8, curTop);
 
         this.root.style.left = `${curLeft}px`;
         this.root.style.top = `${curTop}px`;
@@ -1521,6 +1547,9 @@ export class SocialChatWidget {
       const dy = e.clientY - activeDrag.startY;
       if (!activeDrag.hasMoved && Math.hypot(dx, dy) < 4) return;
       activeDrag.hasMoved = true;
+      if (activeDrag.type === 'bubble') {
+        this._bubbleDragged = true;
+      }
 
       const w = activeDrag.type === 'bubble' ? 58 : activeDrag.w;
       const h = activeDrag.type === 'bubble' ? 58 : activeDrag.h;
@@ -1554,6 +1583,53 @@ export class SocialChatWidget {
 
       if (!wasMoved && dragType === 'bubble') {
         this.setBubbleMode(false);
+      } else if (wasMoved && dragType === 'bubble') {
+        this._justDragged = true;
+        setTimeout(() => { this._justDragged = false; }, 150);
+        if (typeof window !== 'undefined') {
+          // Snap to nearest side edge if dragged close to lateral bounds
+          const snapPadding = 12;
+          const snapThreshold = 72;
+          const currentLeft = parseFloat(this.root.style.left) || 0;
+          const screenW = window.innerWidth;
+          if (currentLeft < snapThreshold) {
+            this.setPosition(snapPadding, parseFloat(this.root.style.top) || 0);
+          } else if (currentLeft > screenW - 58 - snapThreshold) {
+            this.setPosition(screenW - 58 - snapPadding, parseFloat(this.root.style.top) || 0);
+          }
+        }
+      }
+    };
+
+    const bubbleClickHandler = () => {
+      if (this.isBubbleMode && !this._justDragged) {
+        this.setBubbleMode(false);
+      }
+    };
+
+    const bubbleKeyDownHandler = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        this.setBubbleMode(false);
+      }
+    };
+
+    const windowKeyDownHandler = (e) => {
+      if (e.key === 'Escape' && (this.isPoppedOut || this.mode === 'floating')) {
+        if (!this.isBubbleMode) {
+          e.preventDefault();
+          this.setBubbleMode(true);
+        }
+      }
+    };
+
+    const onWindowResize = () => {
+      if (this.isPoppedOut || this.mode === 'floating') {
+        const curLeft = parseFloat(this.root.style.left);
+        const curTop = parseFloat(this.root.style.top);
+        if (!isNaN(curLeft) && !isNaN(curTop)) {
+          this.setPosition(curLeft, curTop);
+        }
       }
     };
 
@@ -1566,7 +1642,12 @@ export class SocialChatWidget {
     }
     if (this.bubbleFab) {
       this.bubbleFab.addEventListener('pointerdown', bubbleDownHandler);
+      this.bubbleFab.addEventListener('click', bubbleClickHandler);
+      this.bubbleFab.addEventListener('keydown', bubbleKeyDownHandler);
     }
+
+    window.addEventListener('keydown', windowKeyDownHandler);
+    window.addEventListener('resize', onWindowResize);
 
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
@@ -1589,7 +1670,13 @@ export class SocialChatWidget {
 
     this._dragCleanup = () => {
       if (header) header.removeEventListener('pointerdown', headerDownHandler);
-      if (this.bubbleFab) this.bubbleFab.removeEventListener('pointerdown', bubbleDownHandler);
+      if (this.bubbleFab) {
+        this.bubbleFab.removeEventListener('pointerdown', bubbleDownHandler);
+        this.bubbleFab.removeEventListener('click', bubbleClickHandler);
+        this.bubbleFab.removeEventListener('keydown', bubbleKeyDownHandler);
+      }
+      window.removeEventListener('keydown', windowKeyDownHandler);
+      window.removeEventListener('resize', onWindowResize);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', onPointerUp);
