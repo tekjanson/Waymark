@@ -1007,6 +1007,34 @@ function renderWaysidePlaceholder(container) {
   container.append(placeholder);
 }
 
+function renderWaysidePoppedOutPlaceholder(container, onDock, target) {
+  if (!container) return;
+  container.replaceChildren();
+  const label = target?.label || 'Wayside';
+  const placeholder = el('div', { className: 'chat-box wayside-placeholder wayside-popped-out-placeholder', id: 'wayside-placeholder' }, [
+    el('div', { className: 'chat-box-head' }, [
+      el('b', { id: 'wayside-crew-title' }, [`💬 ${label}`]),
+      el('span', { className: 'badge blue' }, ['Popped Out']),
+    ]),
+    el('div', { className: 'chat-sheet-line', id: 'wayside-sheet-line' }, ['Floating chat session active on screen']),
+    el('div', {
+      className: 'wayside-popped-body',
+      style: 'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:20px 14px;text-align:center;color:var(--text-muted);font-size:0.88rem;',
+    }, [
+      el('div', { style: 'font-size:2rem;line-height:1;' }, ['↗']),
+      el('div', {}, ['Chat session is popped out. Drag it anywhere or truncate it to a chat bubble.']),
+      el('button', {
+        type: 'button',
+        className: 'btn btn-outline wayside-dock-btn',
+        id: 'wayside-dock-btn',
+        title: 'Dock chat back to the Wayside column',
+        on: { click: onDock },
+      }, ['↙ Dock chat here']),
+    ]),
+  ]);
+  container.append(placeholder);
+}
+
 function deselectTarget(host) {
   _waysideTargetGeneration++;
   teardownWaysideWidget();
@@ -1120,7 +1148,12 @@ async function renderWayside({ autoSelect = true } = {}) {
   ensureWaysidePolling();
 
   if (keepWidget && _waysideWidget) {
-    _waysideWidget.mount(chatContainer);
+    _waysideWidget.setDockContainer(chatContainer);
+    if (_waysideWidget.isPoppedOut) {
+      renderWaysidePoppedOutPlaceholder(chatContainer, () => _waysideWidget.dock(), _activeTarget);
+    } else {
+      _waysideWidget.mount(chatContainer);
+    }
     highlightWaysideTarget(host, _activeTarget);
     refreshWaysideSocial(host).catch(() => {});
     return;
@@ -1254,6 +1287,10 @@ async function selectTarget(target, host) {
     renderSharedFiles(mergeBackfillFiles(target, []));
   }
 
+  const wasPoppedOut = Boolean(_waysideWidget?.isPoppedOut);
+  const wasBubbleMode = Boolean(_waysideWidget?.isBubbleMode);
+  const savedPos = _waysideWidget?._savedPos;
+
   teardownWaysideWidget();
   chatContainer.replaceChildren();
 
@@ -1267,21 +1304,36 @@ async function selectTarget(target, host) {
   }
 
   const widget = new SocialChatWidget({
-    mode: 'embedded',
+    mode: wasPoppedOut ? 'floating' : 'embedded',
+    isPoppedOut: wasPoppedOut,
+    isBubbleMode: wasBubbleMode,
+    savedPos,
+    dockContainer: chatContainer,
+    bubbleIcon: isAgentTarget ? '🤖' : (target.label ? target.label[0].toUpperCase() : '💬'),
     sheetId: _activeLedgerId || '',
     signal: _activeLedgerId ? collab.createLedgerSignal(_activeLedgerId) : null,
     displayName,
     userEmail,
     title: `💬 ${target.label}`,
     subtitle: formatWaysideSubtitle(isAgentTarget, _activeLedgerId, ledger),
-    mountTo: chatContainer,
+    mountTo: wasPoppedOut ? document.body : chatContainer,
     showClose: true,
     showMinimize: false,
+    showPopout: true,
+    showBubble: true,
     showSheetLink: true,
     showConnectDrive: true,
     showShareAgent: isAgentTarget,
     showAgentThreads: isAgentTarget,
     onClose: () => deselectTarget(host),
+    onPopOutChange: (popped) => {
+      if (popped) {
+        renderWaysidePoppedOutPlaceholder(chatContainer, () => widget.dock(), _activeTarget);
+      } else {
+        const ph = chatContainer.querySelector('.wayside-popped-out-placeholder');
+        if (ph) ph.remove();
+      }
+    },
     onOpenSheet: () => openSocialSheet(),
     onConnectDrive: () => connectSharedLedgerFromWayside(host),
     onShareAgent: () => openAgentModalForHost(host),
@@ -1372,6 +1424,9 @@ async function selectTarget(target, host) {
   });
 
   _waysideWidget = widget;
+  if (wasPoppedOut) {
+    renderWaysidePoppedOutPlaceholder(chatContainer, () => widget.dock(), target);
+  }
 
   // Render cached snapshot immediately in 0ms if available
   if (_activeLedgerId && _waysideSnapshotCache.has(_activeLedgerId)) {
