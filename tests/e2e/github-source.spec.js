@@ -70,6 +70,11 @@ async function mockPinRef(page, { succeed = true } = {}) {
 
 test('version section is hidden when github source is not active', async ({ page }) => {
   await setupApp(page);
+  await page.route('**/api/source', route => route.fulfill({
+    status: 404,
+    contentType: 'application/json',
+    body: JSON.stringify({ error: 'Not available' }),
+  }));
   await openSettings(page);
 
   await expect(page.locator('#settings-version-section')).toBeHidden();
