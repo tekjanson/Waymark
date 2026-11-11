@@ -478,25 +478,60 @@ export function classifyMessage(text) {
         templateName: tmpl.name,
         isHelp: false,
         isConversation: false,
+        isCodeTask: false,
       };
     }
   }
 
-  // 2. Check conversational / greetings
-  const greetingWords = ['hi', 'hello', 'hey', 'howdy', 'greetings', 'help', 'what can you do', 'who are you'];
-  const isGreeting = greetingWords.some(g => clean === g || clean.startsWith(`${g} `) || clean.startsWith(`${g}!`) || clean.startsWith(`${g},`));
-  const isHelpQuery = clean.includes('help') || clean.includes('what can you do') || clean.includes('who are you');
+  // 2. Check code/engineering intent (git branch, PR, code edits, repository tasks)
+  const isCodeTask = /\b(pull\s*request|pr)\b/i.test(clean) ||
+    /\b(branch|checkout|commit|merge\s*request)\b/i.test(clean) ||
+    /\b(in\s+the\s+(?:waymark\s+)?repo|codebase|repository)\b/i.test(clean) ||
+    /\b(put\s+up\s+(?:a\s+)?(?:new\s+)?(?:waymark\s+)?branch|put\s+up\s+for\s+pr|make\s+(?:a\s+)?pr)\b/i.test(clean) ||
+    (/\b(feature|bugfix|patch|refactor|update|change|add|fix)\b/i.test(clean) && /\b(code|frontend|backend|ui|component|server|script|wayboard)\b/i.test(clean));
 
-  if (isGreeting || isHelpQuery) {
+  if (isCodeTask) {
     return {
       templateKey: null,
       templateName: null,
-      isHelp: isHelpQuery,
-      isConversation: true,
+      isHelp: false,
+      isConversation: false,
+      isCodeTask: true,
     };
   }
 
-  // Check keywordRoutes (with fuzzy / plural / singular support)
+  // 3. Check conversational / greetings (only pure greetings or capability inquiries, never task messages)
+  const greetingWords = ['hi', 'hello', 'hey', 'howdy', 'greetings', 'yo', 'sup'];
+  const stripped = clean.replace(/[!?,.]/g, '').trim();
+  const words = stripped.split(/\s+/).filter(Boolean);
+
+  const isPureGreeting = greetingWords.includes(words[0]) && (
+    words.length === 1 ||
+    (words.length === 2 && ['there', 'waymark', 'ai', 'bot', 'friend', 'team', 'everyone'].includes(words[1])) ||
+    (words.length === 3 && words[1] === 'waymark' && words[2] === 'ai') ||
+    (words.length <= 4 && (clean.includes('how are you') || clean.includes('good morning') || clean.includes('good evening') || clean.includes('good afternoon')))
+  );
+
+  const isHelpQuery = clean === 'help' || clean === '?' ||
+    clean.includes('what you can do') ||
+    clean.includes('what can you do') ||
+    clean.includes('who are you') ||
+    clean.includes('how do you work') ||
+    clean.includes('how does this work') ||
+    clean.includes('help me understand') ||
+    (clean.includes('help') && words.length <= 10 && !/\b(create|build|make|sheet|spreadsheet|doc|add|log|track)\b/i.test(clean));
+
+  if (isPureGreeting || isHelpQuery) {
+    return {
+      templateKey: null,
+      templateName: null,
+      isHelp: Boolean(isHelpQuery),
+      isConversation: true,
+      isCodeTask: false,
+    };
+  }
+
+  // 4. Check keywordRoutes (with fuzzy / plural / singular support)
   let bestRoute = null;
   let maxMatches = 0;
   for (const route of CATALOG.keywordRoutes || []) {
@@ -528,10 +563,11 @@ export function classifyMessage(text) {
       templateName: tmpl ? tmpl.name : key,
       isHelp: false,
       isConversation: false,
+      isCodeTask: false,
     };
   }
 
-  // Check template detectSignals
+  // 5. Check template detectSignals
   let bestTmpl = null;
   let maxSignals = 0;
   for (const tmpl of CATALOG.templates || []) {
@@ -551,6 +587,7 @@ export function classifyMessage(text) {
       templateName: bestTmpl.name,
       isHelp: false,
       isConversation: false,
+      isCodeTask: false,
     };
   }
 
@@ -559,6 +596,7 @@ export function classifyMessage(text) {
     templateName: null,
     isHelp: false,
     isConversation: false,
+    isCodeTask: false,
   };
 }
 
@@ -1409,7 +1447,7 @@ export class WaysideOrchestrator {
         contextLines.push(`Recent conversation history:\n${conv.history.slice(-4).map(h => `- ${h.role}: ${h.text}`).join('\n')}`);
       }
 
-      console.log(`[WaysideOrchestrator] 🚀 Dispatching to AGY (template: ${effectiveTemplateKey || 'auto'}, sheet: ${targetSheetId || 'none'})...`);
+      console.log(`[WaysideOrchestrator] 🚀 Dispatching to AGY (template: ${effectiveTemplateKey || 'auto'}, sheet: ${targetSheetId || 'none'}, codeTask: ${Boolean(classification.isCodeTask)})...`);
 
       // Resolve WHICH Google account this request must run as. For a shared /
       // group agent this MUST be the specific requester — never a silent fall
@@ -1418,7 +1456,7 @@ export class WaysideOrchestrator {
       const identity = this.resolveRequesterIdentity(senderKey);
       console.log(`[WaysideOrchestrator] 👤 Requester='${senderKey}' → actingAs='${identity.actingAs || '(none)'}' | canAct=${identity.canActAsRequester} | ${identity.reason} | token='${identity.tokenPath || 'none'}'`);
 
-      if (!identity.canActAsRequester) {
+      if (!identity.canActAsRequester && !classification.isCodeTask) {
         // Refuse to create/modify under the wrong account. Tell the requester
         // exactly how to connect so their next request lands in THEIR Drive.
         console.warn(`[WaysideOrchestrator] ⛔ Not acting for '${senderKey}' (${identity.reason}) — refusing host fallback so nothing is created in the wrong account.`);
@@ -1427,20 +1465,22 @@ export class WaysideOrchestrator {
         // Record the active requester so every MCP child is deterministic, then
         // dispatch with an explicit identity assertion (expectedEmail) as a final
         // safety net inside the runner.
-        try {
-          const gcloudDir = path.join(os.homedir(), '.config', 'gcloud');
-          mkdirSync(gcloudDir, { recursive: true });
-          writeFileSync(
-            path.join(gcloudDir, 'waymark-active-requester.json'),
-            JSON.stringify({
-              sender: identity.actingAs || senderKey,
-              tokenPath: identity.tokenPath,
-              updatedAt: Date.now(),
-            }, null, 2) + '\n',
-            { mode: 0o600 }
-          );
-        } catch (err) {
-          console.warn(`[WaysideOrchestrator] ⚠️ Could not persist active-requester pointer: ${err.message}`);
+        if (identity.actingAs && identity.tokenPath) {
+          try {
+            const gcloudDir = path.join(os.homedir(), '.config', 'gcloud');
+            mkdirSync(gcloudDir, { recursive: true });
+            writeFileSync(
+              path.join(gcloudDir, 'waymark-active-requester.json'),
+              JSON.stringify({
+                sender: identity.actingAs || senderKey,
+                tokenPath: identity.tokenPath,
+                updatedAt: Date.now(),
+              }, null, 2) + '\n',
+              { mode: 0o600 }
+            );
+          } catch (err) {
+            console.warn(`[WaysideOrchestrator] ⚠️ Could not persist active-requester pointer: ${err.message}`);
+          }
         }
 
         const agyResult = await runAgyTask({
@@ -1450,7 +1490,8 @@ export class WaysideOrchestrator {
           context: contextLines.join('\n'),
           shareWith: shareTargets,
           tokenPath: identity.tokenPath,
-          expectedEmail: identity.actingAs,
+          expectedEmail: classification.isCodeTask ? '' : identity.actingAs,
+          isCodeTask: Boolean(classification.isCodeTask),
         });
 
         if (agyResult.ok) {

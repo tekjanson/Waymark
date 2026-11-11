@@ -45,6 +45,17 @@ const ROOT = path.resolve(__dirname, '../..');
     expect(res.isConversation).toBe(false);
   });
 
+  test('classifyMessage detects code and PR requests even with greeting prefixes', async () => {
+    const { classifyMessage } = await import('../../scripts/wayside-orchestrator.mjs');
+    const prTask = classifyMessage('hey can you put up new waymark branch that lets me pop out the wayside chat session so i can have it anywhere on the screen in the wayboard and to be able to truncat it down to a chat bubble, that would be sweet if you could do that and put it up for PR in the waymark repo, not merge it just put it up for PR');
+    expect(prTask.isCodeTask).toBe(true);
+    expect(prTask.isConversation).toBe(false);
+
+    const branchTask = classifyMessage('create a branch to fix the wayboard bug and open a pull request');
+    expect(branchTask.isCodeTask).toBe(true);
+    expect(branchTask.isConversation).toBe(false);
+  });
+
   test('extractSpreadsheetId parses Google Sheet IDs from URLs, hashes, and JSON', async () => {
     const { extractSpreadsheetId } = await import('../../scripts/agy-agent-runner.mjs');
     const id = '1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4';
@@ -67,6 +78,18 @@ const ROOT = path.resolve(__dirname, '../..');
     expect(prompt).toContain('Target Spreadsheet ID: sheet-123');
     expect(prompt).toContain('User Request: Create a packing list for hiking');
     expect(prompt).toContain('waymark_create_sheet');
+  });
+
+  test('buildAgyPrompt constructs engineering and PR instructions for code tasks', async () => {
+    const { buildAgyPrompt } = await import('../../scripts/agy-agent-runner.mjs');
+    const prompt = buildAgyPrompt({
+      task: 'Put up a new branch for the wayboard popout and create a PR in the repo',
+      isCodeTask: true,
+    });
+
+    expect(prompt).toContain('autonomous software engineer');
+    expect(prompt).toContain('gh pr create');
+    expect(prompt).toContain('git checkout -b');
   });
 
   test('WaysideOrchestrator initializes with proper defaults and deduplicates message IDs', async () => {
