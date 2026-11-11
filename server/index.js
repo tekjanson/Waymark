@@ -170,6 +170,10 @@ function serveIndex(req, res) {
   }
   if (!config.WAYMARK_LOCAL) {
     injections.push(`window.__WAYMARK_GITHUB_REF=${safeJsString(currentRef)};`);
+    // Flag that the app is served from a GitHub source, so the Settings
+    // modal shows the version (branch/ref) switcher. Without this the
+    // native version section stays hidden and refs can't be changed.
+    injections.push('window.__WAYMARK_GITHUB_SOURCE=true;');
   }
   // Extract GCP project number from client ID (prefix before first dash)
   const gcpProject = (config.GOOGLE_CLIENT_ID || '').split('-')[0];
