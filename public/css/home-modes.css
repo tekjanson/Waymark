@@ -329,6 +329,20 @@ html[data-wm-palette="custom"] #wayboard-root {
   margin-left: auto;
   gap: 4px;
 }
+#wayboard-root .social-chat-panel.social-chat-embedded .social-chat-popout,
+#wayboard-root .social-chat-panel.social-chat-embedded .social-chat-bubble-toggle {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(255,255,255,0.4);
+  background: rgba(255,255,255,0.18);
+  color: #fff;
+  border-radius: 4px;
+}
+#wayboard-root .social-chat-panel.social-chat-embedded .social-chat-popout:hover,
+#wayboard-root .social-chat-panel.social-chat-embedded .social-chat-bubble-toggle:hover {
+  background: rgba(255,255,255,0.32);
+}
 #wayboard-root .social-chat-panel.social-chat-embedded .social-chat-close {
   flex: 0 0 28px;
   width: 28px;

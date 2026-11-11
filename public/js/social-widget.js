@@ -90,10 +90,23 @@ export class SocialChatWidget {
 
     this.showClose = opts.showClose !== false;
     this.showMinimize = opts.showMinimize !== undefined ? opts.showMinimize : (this.mode === 'floating');
+    this.showPopout = opts.showPopout !== undefined ? Boolean(opts.showPopout) : (this.mode === 'embedded');
+    this.showBubble = opts.showBubble !== undefined ? Boolean(opts.showBubble) : true;
     this.showSheetLink = opts.showSheetLink !== undefined ? !!opts.showSheetLink : (this.mode === 'embedded');
     this.showConnectDrive = opts.showConnectDrive !== undefined ? !!opts.showConnectDrive : (this.mode === 'embedded');
     this.showShareAgent = Boolean(opts.showShareAgent);
     this.showAgentThreads = Boolean(opts.showAgentThreads);
+    this.bubbleIconText = opts.bubbleIcon || '';
+    this.isPoppedOut = Boolean(opts.isPoppedOut);
+    this.isBubbleMode = Boolean(opts.isBubbleMode);
+    this.dockContainer = opts.dockContainer || opts.mountTo || null;
+    this._savedPos = opts.savedPos || null;
+    this._savedSize = opts.savedSize || null;
+    this.onPopOutChange = opts.onPopOutChange || null;
+    this.onBubbleChange = opts.onBubbleChange || null;
+    this._dragCleanup = null;
+    this._resizeObserver = null;
+    this.idPrefix = opts.idPrefix || (this.mode === 'embedded' || opts.isPoppedOut ? 'wayside' : 'social-chat');
 
     this._chatLog = [];
     this._unreadCount = 0;
@@ -166,16 +179,31 @@ export class SocialChatWidget {
     });
 
     this._buildDOM();
+    this._initDragAndBubble();
 
     // Bind media elements to session
     this.session.bindRemoteAudio(this.remoteAudio);
     this.session.bindRemoteVideo(this.remoteVideo);
     this.session.bindLocalVideo(this.localVideo);
 
-    if (opts.mountTo) {
+    if (this.isPoppedOut) {
+      this.popOut();
+    } else if (opts.mountTo) {
       this.mount(opts.mountTo);
     } else if (this.mode === 'floating' && typeof document !== 'undefined') {
       this.mount(document.body);
+    }
+
+    if (this._savedSize && !this.isBubbleMode) {
+      this.setSize(this._savedSize.width, this._savedSize.height);
+    }
+
+    if (this._savedPos) {
+      this.setPosition(this._savedPos.left, this._savedPos.top);
+    }
+
+    if (this.isBubbleMode) {
+      this.setBubbleMode(true);
     }
 
     if (this.sheetId) {
@@ -192,6 +220,8 @@ export class SocialChatWidget {
   setTitle(title) {
     this.titleText = title;
     if (this.titleEl) this.titleEl.textContent = title;
+    if (this.bubbleFab) this.bubbleFab.setAttribute('title', `${title} — Click to expand`);
+    if (this.root && this.isBubbleMode) this.root.setAttribute('title', `${title} — Click to expand`);
   }
 
   setSubtitle(subtitle, { isBase = true } = {}) {
@@ -215,13 +245,30 @@ export class SocialChatWidget {
   }
 
   _buildDOM() {
-    const isFloating = this.mode === 'floating';
-    const idPrefix = isFloating ? 'social-chat' : 'wayside';
-    const rootClasses = isFloating
+    const isFloating = this.mode === 'floating' || this.isPoppedOut;
+    const idPrefix = this.idPrefix;
+    let rootClasses = isFloating
       ? 'social-chat-panel'
       : 'social-chat-panel social-chat-embedded chat-box';
+    if (this.isPoppedOut) rootClasses += ' social-chat-popped-out';
+    if (this.isBubbleMode) rootClasses += ' social-chat-bubble-mode';
 
     this.root = el('div', { className: rootClasses });
+
+    /* ---------- Chat Bubble FAB (Truncated bubble mode) ---------- */
+    const initialBubbleIcon = this.bubbleIconText || (this.titleText.includes('AI') ? '🤖' : '💬');
+    this.bubbleIcon = el('span', { className: 'social-chat-bubble-icon' }, [initialBubbleIcon]);
+    this._bubbleUnreadBadge = el('span', { className: 'social-chat-bubble-badge hidden' }, ['0']);
+    this._bubbleCallIndicator = el('span', { className: 'social-chat-bubble-call-indicator hidden' });
+    this.bubbleFab = el('div', {
+      className: 'social-chat-bubble-fab',
+      id: `${idPrefix}-bubble-fab`,
+      title: `${this.titleText} — Click to expand`,
+    }, [
+      this.bubbleIcon,
+      this._bubbleUnreadBadge,
+      this._bubbleCallIndicator,
+    ]);
 
     /* ---------- Header ---------- */
     const header = el('div', { className: 'social-chat-header chat-box-head' });
@@ -229,6 +276,7 @@ export class SocialChatWidget {
     this.titleEl = el('span', {
       className: 'social-chat-title',
       id: `${idPrefix}-crew-title`,
+      title: this.titleText,
     }, [this.titleText]);
 
     this.statusDot = el('span', {
@@ -240,7 +288,7 @@ export class SocialChatWidget {
     }, [isFloating ? this.subtitleText : (this.sheetId ? 'Listening…' : 'Idle')]);
 
     this.peerCount = el('span', {
-      className: 'social-chat-peer-count',
+      className: `social-chat-peer-count${(idPrefix === 'wayside' || this.isPoppedOut) ? ' hidden' : ''}`,
     }, ['0 peers']);
 
     this.unreadBadge = el('span', {
@@ -249,7 +297,8 @@ export class SocialChatWidget {
 
     const headerActions = el('div', { className: 'chat-box-actions social-header-actions' });
     const subtitleActions = el('div', { className: 'chat-box-actions social-subtitle-actions' });
-    const linkActions = isFloating ? headerActions : subtitleActions;
+    const hasSubtitle = (!isFloating || this.isPoppedOut || idPrefix === 'wayside');
+    const linkActions = hasSubtitle ? subtitleActions : headerActions;
 
     if (this.showSheetLink) {
       this.sheetBtn = el('button', {
@@ -288,6 +337,36 @@ export class SocialChatWidget {
     }, ['⚙️']);
     headerActions.append(this.settingsBtn);
 
+    if (this.showBubble) {
+      this.bubbleBtn = el('button', {
+        className: 'social-chat-bubble-toggle btn-icon',
+        id: `${idPrefix}-bubble-btn`,
+        title: this.isBubbleMode ? 'Expand chat window' : 'Truncate to chat bubble',
+        'aria-label': this.isBubbleMode ? 'Expand chat window' : 'Truncate to chat bubble',
+        on: { click: () => {
+          if (!this.isPoppedOut) {
+            this.popOut();
+          }
+          this.setBubbleMode(!this.isBubbleMode);
+        } },
+      }, ['🫧']);
+      headerActions.append(this.bubbleBtn);
+    }
+
+    if (this.showPopout) {
+      this.popoutBtn = el('button', {
+        className: 'social-chat-popout btn-icon',
+        id: `${idPrefix}-popout-btn`,
+        title: this.isPoppedOut ? 'Dock chat back to Wayside' : 'Pop out chat',
+        'aria-label': this.isPoppedOut ? 'Dock chat back to Wayside' : 'Pop out chat',
+        on: { click: () => {
+          if (this.isPoppedOut) this.dock();
+          else this.popOut();
+        } },
+      }, [this.isPoppedOut ? '↙' : '↗']);
+      headerActions.append(this.popoutBtn);
+    }
+
     if (this.showMinimize) {
       this.minimizeBtn = el('button', {
         className: 'social-chat-minimize btn-icon',
@@ -312,6 +391,13 @@ export class SocialChatWidget {
       }, ['✕']);
       headerActions.append(this.closeBtn);
     }
+
+    header.addEventListener('dblclick', (e) => {
+      if (e.target.closest('button, input, select, a, textarea')) return;
+      if (this.isPoppedOut || this.mode === 'floating') {
+        this.setBubbleMode(!this.isBubbleMode);
+      }
+    });
 
     header.append(
       this.titleEl,
@@ -537,10 +623,17 @@ export class SocialChatWidget {
     sendBtn.addEventListener('click', () => this.sendMessage());
     inputBar.append(this.input, sendBtn);
 
+    /* ---------- Resize Grip (popped out floating mode) ---------- */
+    this.resizeGrip = el('div', {
+      className: 'social-chat-resize-grip',
+      title: 'Resize window',
+    });
+
     /* ---------- Assemble Root ---------- */
     this.root.append(
+      this.bubbleFab,
       header,
-      ...(!isFloating ? [this.subtitle] : []),
+      ...((!isFloating || this.isPoppedOut || idPrefix === 'wayside') ? [this.subtitle] : []),
       ...(this.agentThreadBar ? [this.agentThreadBar] : []),
       this.settingsPanel,
       this.incomingCallModal,
@@ -551,6 +644,7 @@ export class SocialChatWidget {
       this.callBar,
       this.debugPanel,
       inputBar,
+      this.resizeGrip,
     );
   }
 
@@ -767,6 +861,9 @@ export class SocialChatWidget {
     }
     this.debugBtn.classList.remove('hidden');
     this.root.classList.add('social-chat-in-call');
+    if (this._bubbleCallIndicator) {
+      this._bubbleCallIndicator.classList.remove('hidden');
+    }
     if (this.subtitle) {
       const linkText = this.sheetId ? `Linked: ${this.sheetId}` : 'Linked on first share';
       this.setSubtitle(`📹 In call · ${linkText}`);
@@ -789,6 +886,9 @@ export class SocialChatWidget {
     this.camToggleBtn.classList.add('hidden');
     this.mediaContainer.classList.add('hidden');
     this.root.classList.remove('social-chat-in-call');
+    if (this._bubbleCallIndicator) {
+      this._bubbleCallIndicator.classList.add('hidden');
+    }
     this.muteBtn.textContent = '🔇 Mute';
     this.camToggleBtn.textContent = '📷 Cam Off';
     if (this.subtitle) {
@@ -953,10 +1053,18 @@ export class SocialChatWidget {
       this._chatLog.push({ name: sender, text, ts: numTs || Date.now(), self: isSelf });
     }
 
-    if (this.root.classList.contains('social-chat-minimized') && !isSelf && sender !== 'System') {
-      this._unreadCount++;
-      this.unreadBadge.textContent = String(this._unreadCount);
-      this.unreadBadge.classList.remove('hidden');
+    if (!isSelf && sender !== 'System') {
+      if (this.isBubbleMode) {
+        this._unreadCount++;
+        if (this._bubbleUnreadBadge) {
+          this._bubbleUnreadBadge.textContent = String(this._unreadCount);
+          this._bubbleUnreadBadge.classList.remove('hidden');
+        }
+      } else if (this.root.classList.contains('social-chat-minimized')) {
+        this._unreadCount++;
+        this.unreadBadge.textContent = String(this._unreadCount);
+        this.unreadBadge.classList.remove('hidden');
+      }
     }
   }
 
@@ -1173,8 +1281,335 @@ export class SocialChatWidget {
     URL.revokeObjectURL(url);
   }
 
+  popOut() {
+    if (this.isPoppedOut) return;
+    this.isPoppedOut = true;
+
+    if (!this.dockContainer && this.root?.parentElement && this.root.parentElement !== document.body) {
+      this.dockContainer = this.root.parentElement;
+    }
+
+    if (this.root && this.root.parentElement !== document.body && typeof document !== 'undefined') {
+      document.body.append(this.root);
+    }
+
+    this.root?.classList.remove('social-chat-embedded');
+    this.root?.classList.add('social-chat-popped-out');
+    if (this.peerCount && (this.idPrefix === 'wayside' || this.isPoppedOut)) {
+      this.peerCount.classList.add('hidden');
+    }
+
+    if (this.popoutBtn) {
+      this.popoutBtn.textContent = '↙';
+      this.popoutBtn.title = 'Dock chat back to Wayside';
+      this.popoutBtn.setAttribute('aria-label', 'Dock chat back to Wayside');
+    }
+
+    if (this._savedSize) {
+      this.setSize(this._savedSize.width, this._savedSize.height);
+    } else if (typeof window !== 'undefined') {
+      const winWidth = 440;
+      const winHeight = Math.min(580, window.innerHeight - 32);
+      this.setSize(winWidth, winHeight);
+    }
+
+    if (this._savedPos) {
+      this.setPosition(this._savedPos.left, this._savedPos.top);
+    } else if (typeof window !== 'undefined') {
+      const winWidth = this._savedSize?.width || 440;
+      const winHeight = this._savedSize?.height || Math.min(580, window.innerHeight - 32);
+      const defaultLeft = Math.max(8, window.innerWidth - winWidth - 24);
+      const defaultTop = Math.max(8, window.innerHeight - winHeight - 24);
+      this.setPosition(defaultLeft, defaultTop);
+    }
+
+    if (typeof this.onPopOutChange === 'function') {
+      this.onPopOutChange(true);
+    }
+  }
+
+  dock() {
+    if (!this.isPoppedOut) return;
+    this.isPoppedOut = false;
+
+    if (this.isBubbleMode) {
+      this.setBubbleMode(false);
+    }
+
+    this.root?.classList.remove('social-chat-popped-out');
+    this.root?.classList.remove('social-chat-bubble-mode');
+    this.root?.classList.add('social-chat-embedded');
+
+    if (this.root) {
+      this.root.style.left = '';
+      this.root.style.top = '';
+      this.root.style.right = '';
+      this.root.style.bottom = '';
+      this.root.style.width = '';
+      this.root.style.height = '';
+    }
+
+    const container = this.dockContainer || (typeof document !== 'undefined' ? document.getElementById('wayside-chat-container') : null);
+    if (container && this.root) {
+      container.replaceChildren(this.root);
+    }
+
+    if (this.popoutBtn) {
+      this.popoutBtn.textContent = '↗';
+      this.popoutBtn.title = 'Pop out chat';
+      this.popoutBtn.setAttribute('aria-label', 'Pop out chat');
+    }
+
+    if (typeof this.onPopOutChange === 'function') {
+      this.onPopOutChange(false);
+    }
+  }
+
+  setBubbleMode(isBubble) {
+    this.isBubbleMode = Boolean(isBubble);
+    if (!this.root) return;
+
+    if (this.bubbleBtn) {
+      this.bubbleBtn.title = this.isBubbleMode ? 'Expand chat window' : 'Truncate to chat bubble';
+      this.bubbleBtn.setAttribute('aria-label', this.bubbleBtn.title);
+    }
+
+    if (this.isBubbleMode) {
+      if (!this.isPoppedOut) {
+        this.popOut();
+      }
+      const rect = this.root.getBoundingClientRect();
+      if (!this._savedSize && rect.width > 120 && rect.height > 120) {
+        this._savedSize = { width: Math.round(rect.width), height: Math.round(rect.height) };
+      }
+      const curLeft = parseFloat(this.root.style.left) || rect.left;
+      const curTop = parseFloat(this.root.style.top) || rect.top;
+      const curWidth = rect.width || (this._savedSize?.width || 440);
+
+      // Anchor bubble near top-right where bubble toggle button was located
+      const bubbleLeft = Math.max(8, Math.min(window.innerWidth - 68, curLeft + (curWidth - 68)));
+      const bubbleTop = Math.max(8, Math.min(window.innerHeight - 68, curTop + 4));
+
+      this.root.classList.add('social-chat-bubble-mode');
+      this.root.setAttribute('title', `${this.titleText} — Click to expand`);
+      this.root.style.left = `${bubbleLeft}px`;
+      this.root.style.top = `${bubbleTop}px`;
+      this.root.style.width = '58px';
+      this.root.style.height = '58px';
+      this._savedPos = { left: bubbleLeft, top: bubbleTop };
+
+      // Sync unread badge
+      if (this._bubbleUnreadBadge) {
+        this._bubbleUnreadBadge.textContent = String(this._unreadCount);
+        this._bubbleUnreadBadge.classList.toggle('hidden', this._unreadCount <= 0);
+      }
+      if (this._bubbleCallIndicator) {
+        this._bubbleCallIndicator.classList.toggle('hidden', !this.session?.inCall);
+      }
+    } else {
+      this.root.classList.remove('social-chat-bubble-mode');
+      this.root.removeAttribute('title');
+      this._unreadCount = 0;
+      if (this.unreadBadge) this.unreadBadge.classList.add('hidden');
+      if (this._bubbleUnreadBadge) this._bubbleUnreadBadge.classList.add('hidden');
+
+      if (typeof window !== 'undefined') {
+        const winWidth = this._savedSize?.width || 440;
+        const winHeight = this._savedSize?.height || 580;
+        this.setSize(winWidth, winHeight);
+
+        let curLeft = parseFloat(this.root.style.left) || (window.innerWidth - winWidth - 24);
+        let curTop = parseFloat(this.root.style.top) || (window.innerHeight - winHeight - 24);
+
+        if (curLeft + winWidth > window.innerWidth - 8) {
+          curLeft = Math.max(8, window.innerWidth - winWidth - 16);
+        }
+        if (curTop + winHeight > window.innerHeight - 8) {
+          curTop = Math.max(8, window.innerHeight - winHeight - 16);
+        }
+        curLeft = Math.max(8, curLeft);
+        curTop = Math.max(8, curTop);
+
+        this.root.style.left = `${curLeft}px`;
+        this.root.style.top = `${curTop}px`;
+        this._savedPos = { left: curLeft, top: curTop };
+      }
+    }
+
+    if (typeof this.onBubbleChange === 'function') {
+      this.onBubbleChange(this.isBubbleMode);
+    }
+  }
+
+  setSize(width, height) {
+    if (!this.root || typeof window === 'undefined') return;
+    if (this.isBubbleMode) return;
+    if (typeof width === 'number' && typeof height === 'number') {
+      const maxW = Math.max(320, window.innerWidth - 16);
+      const maxH = Math.max(380, window.innerHeight - 16);
+      const clampedW = Math.max(320, Math.min(maxW, width));
+      const clampedH = Math.max(380, Math.min(maxH, height));
+      this.root.style.width = `${clampedW}px`;
+      this.root.style.height = `${clampedH}px`;
+      this._savedSize = { width: clampedW, height: clampedH };
+    }
+  }
+
+  setPosition(left, top) {
+    if (!this.root || typeof window === 'undefined') return;
+    if (typeof left === 'number' && typeof top === 'number') {
+      const sizeW = this.isBubbleMode ? 58 : (this._savedSize?.width || 440);
+      const sizeH = this.isBubbleMode ? 58 : (this._savedSize?.height || 580);
+      const maxLeft = Math.max(8, window.innerWidth - sizeW - 8);
+      const maxTop = Math.max(8, window.innerHeight - sizeH - 8);
+      const clampedLeft = Math.max(8, Math.min(maxLeft, left));
+      const clampedTop = Math.max(8, Math.min(maxTop, top));
+      this.root.style.left = `${clampedLeft}px`;
+      this.root.style.top = `${clampedTop}px`;
+      this.root.style.right = 'auto';
+      this.root.style.bottom = 'auto';
+      this._savedPos = { left: clampedLeft, top: clampedTop };
+    }
+  }
+
+  setDockContainer(container) {
+    if (container) {
+      this.dockContainer = container;
+    }
+  }
+
+  _initDragAndBubble() {
+    if (typeof window === 'undefined' || !this.root) return;
+    let activeDrag = null;
+
+    const onPointerDown = (e, type) => {
+      if (e.button !== 0 && e.pointerType === 'mouse') return;
+      if (type === 'header') {
+        if (e.target.closest('button, input, select, a, textarea')) return;
+        if (!this.isPoppedOut && this.mode !== 'floating') return;
+      } else if (type === 'bubble') {
+        if (!this.isBubbleMode) return;
+      }
+
+      e.preventDefault();
+      const rect = this.root.getBoundingClientRect();
+      const targetEl = e.currentTarget;
+      try {
+        if (targetEl && targetEl.setPointerCapture) {
+          targetEl.setPointerCapture(e.pointerId);
+        }
+      } catch {}
+
+      activeDrag = {
+        type,
+        pointerId: e.pointerId,
+        targetEl,
+        startX: e.clientX,
+        startY: e.clientY,
+        origLeft: rect.left,
+        origTop: rect.top,
+        w: rect.width || (type === 'bubble' ? 58 : 440),
+        h: rect.height || (type === 'bubble' ? 58 : 580),
+        hasMoved: false,
+      };
+      this.root.classList.add('social-chat-dragging');
+    };
+
+    const onPointerMove = (e) => {
+      if (!activeDrag) return;
+      const dx = e.clientX - activeDrag.startX;
+      const dy = e.clientY - activeDrag.startY;
+      if (!activeDrag.hasMoved && Math.hypot(dx, dy) < 4) return;
+      activeDrag.hasMoved = true;
+
+      const w = activeDrag.type === 'bubble' ? 58 : activeDrag.w;
+      const h = activeDrag.type === 'bubble' ? 58 : activeDrag.h;
+      const maxLeft = Math.max(8, window.innerWidth - w - 8);
+      const maxTop = Math.max(8, window.innerHeight - h - 8);
+
+      let newLeft = activeDrag.origLeft + dx;
+      let newTop = activeDrag.origTop + dy;
+
+      newLeft = Math.max(8, Math.min(maxLeft, newLeft));
+      newTop = Math.max(8, Math.min(maxTop, newTop));
+
+      this.root.style.left = `${newLeft}px`;
+      this.root.style.top = `${newTop}px`;
+      this.root.style.right = 'auto';
+      this.root.style.bottom = 'auto';
+      this._savedPos = { left: newLeft, top: newTop };
+    };
+
+    const onPointerUp = (e) => {
+      if (!activeDrag) return;
+      try {
+        if (activeDrag.targetEl && activeDrag.targetEl.releasePointerCapture) {
+          activeDrag.targetEl.releasePointerCapture(activeDrag.pointerId);
+        }
+      } catch {}
+      this.root.classList.remove('social-chat-dragging');
+      const wasMoved = activeDrag.hasMoved;
+      const dragType = activeDrag.type;
+      activeDrag = null;
+
+      if (!wasMoved && dragType === 'bubble') {
+        this.setBubbleMode(false);
+      }
+    };
+
+    const header = this.root.querySelector('.social-chat-header');
+    const headerDownHandler = (e) => onPointerDown(e, 'header');
+    const bubbleDownHandler = (e) => onPointerDown(e, 'bubble');
+
+    if (header) {
+      header.addEventListener('pointerdown', headerDownHandler);
+    }
+    if (this.bubbleFab) {
+      this.bubbleFab.addEventListener('pointerdown', bubbleDownHandler);
+    }
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+
+    if (typeof ResizeObserver !== 'undefined' && !this._resizeObserver) {
+      this._resizeObserver = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          if (!this.isBubbleMode && (this.isPoppedOut || this.mode === 'floating')) {
+            const w = Math.round(this.root.offsetWidth);
+            const h = Math.round(this.root.offsetHeight);
+            if (w >= 250 && h >= 250) {
+              this._savedSize = { width: w, height: h };
+            }
+          }
+        }
+      });
+      this._resizeObserver.observe(this.root);
+    }
+
+    this._dragCleanup = () => {
+      if (header) header.removeEventListener('pointerdown', headerDownHandler);
+      if (this.bubbleFab) this.bubbleFab.removeEventListener('pointerdown', bubbleDownHandler);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+      if (this._resizeObserver) {
+        this._resizeObserver.disconnect();
+        this._resizeObserver = null;
+      }
+    };
+  }
+
   destroy({ keepBlock = false } = {}) {
     this._stopDebug();
+    if (this._dragCleanup) {
+      this._dragCleanup();
+      this._dragCleanup = null;
+    }
+    if (this._resizeObserver) {
+      this._resizeObserver.disconnect();
+      this._resizeObserver = null;
+    }
     if (this.session) {
       this.session.destroy({ keepBlock: keepBlock || this.session.connect?._paused });
     }
