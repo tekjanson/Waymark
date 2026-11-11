@@ -2734,14 +2734,15 @@ function openSettingsModal() {
     });
   }
 
-  // Version picker (visible when GitHub source mode is available)
-  if (settingsVersionSection) {
+  // Version picker — shown whenever the server serves from a GitHub source
+  // (production). The server injects window.__WAYMARK_GITHUB_SOURCE=true.
+  if (window.__WAYMARK_GITHUB_SOURCE && settingsVersionSection) {
     settingsVersionSection.classList.remove('hidden');
     const savedRef = userData.getGithubRef();
     settingsGithubRef.value = savedRef;
     settingsCurrentRef.textContent = window.__WAYMARK_GITHUB_REF || savedRef;
-    if (settingsPinnedRef) settingsPinnedRef.textContent = 'main';
-    if (settingsUnpinRef) settingsUnpinRef.classList.add('hidden');
+    if (settingsPinnedRef) settingsPinnedRef.textContent = savedRef || 'main';
+    if (settingsUnpinRef) settingsUnpinRef.classList.toggle('hidden', (savedRef || 'main') === 'main');
 
     // Highlight the active quick-switch button
     settingsRefSuggestions.querySelectorAll('.settings-ref-tag').forEach(btn => {
@@ -2749,12 +2750,10 @@ function openSettingsModal() {
       btn.classList.remove('settings-ref-tag-pinned');
     });
 
-    // Fetch backend source info to confirm availability.
-    // If runtime flags are stale/missing but the source API is live, keep this enabled.
-    fetchSourceInfo().then((info) => {
-      const hasGithubSource = Boolean(window.__WAYMARK_GITHUB_SOURCE) || Boolean(info?.mode === 'github') || Boolean(info?.ref);
-      settingsVersionSection.classList.toggle('hidden', !hasGithubSource);
-    });
+    // Fetch current serving + pinned refs and cached quick-switch tags.
+    fetchSourceInfo();
+  } else if (settingsVersionSection) {
+    settingsVersionSection.classList.add('hidden');
   }
 
   settingsModal.classList.remove('hidden');
@@ -3163,7 +3162,9 @@ function wireThemeBuilder() {
 /* ---------- Version Picker helpers ---------- */
 
 /**
- * Apply a new GitHub ref: save to Drive, tell the backend, and reload.
+ * Switch to a GitHub ref for this session only (temporary preview).
+ * Does NOT change the Drive-pinned default — a sign-out or new session
+ * reverts to the pinned ref. Use pinGithubRef() to set the default.
  */
 async function applyGithubRef() {
   const ref = (settingsGithubRef.value || '').trim();
@@ -3176,7 +3177,7 @@ async function applyGithubRef() {
   setVersionActionsDisabled(true);
 
   try {
-    // Tell the backend to switch refs
+    // Tell the backend to switch refs for this session
     const base = window.__WAYMARK_BASE || '';
     const res = await fetch(`${base}/api/source/ref`, {
       method: 'POST',
@@ -3191,10 +3192,12 @@ async function applyGithubRef() {
 
     const data = await res.json();
 
-    // Save the ref to Drive so it persists across sessions/devices
-    await userData.setGithubRef(data.ref);
+    // Temporary preview: mirror to localStorage only (Drive pin unchanged),
+    // and mark the session synced so boot-time sync won't revert the switch.
+    storage.setGithubRef(data.ref);
+    try { sessionStorage.setItem('waymark_ref_synced', '1'); } catch { /* ignore */ }
 
-    showRefStatus(`Switched to "${data.ref}". Reloading…`, 'success');
+    showRefStatus(`Switched to "${data.ref}" (preview). Reloading…`, 'success');
 
     // Update quick-switch highlights
     settingsRefSuggestions.querySelectorAll('.settings-ref-tag').forEach(btn => {
@@ -3212,7 +3215,8 @@ async function applyGithubRef() {
 }
 
 /**
- * Persist the selected ref as the user's default pinned version.
+ * Pin the selected ref as the user's default version. Persists to Google
+ * Drive so it survives sign-out and follows the user across devices.
  */
 async function pinGithubRef(ref) {
   if (!ref) {
@@ -3237,9 +3241,16 @@ async function pinGithubRef(ref) {
     }
 
     const data = await res.json();
-    await userData.setGithubRef(data.pinnedRef || data.ref);
-    updatePinnedRefState(data.pinnedRef || data.ref);
-    showRefStatus(`📌 Pinned "${data.pinnedRef || data.ref}". Reloading…`, 'success');
+    const pinned = data.pinnedRef || data.ref;
+
+    // Pin is the source of truth — persist to Drive and clear the session
+    // flag so boot-time sync keeps Drive and the server aligned on reload.
+    await userData.setGithubRef(pinned);
+    try { sessionStorage.removeItem('waymark_ref_synced'); } catch { /* ignore */ }
+
+    updatePinnedRefState(pinned);
+    settingsCurrentRef.textContent = pinned;
+    showRefStatus(`📌 Pinned "${pinned}". Reloading…`, 'success');
     setTimeout(() => window.location.reload(), 800);
   } catch (err) {
     showRefStatus(`Failed: ${err.message}`, 'error');
@@ -3286,7 +3297,7 @@ async function fetchSourceInfo() {
   try {
     const base = window.__WAYMARK_BASE || '';
     const res = await fetch(`${base}/api/source`);
-    if (!res.ok) return null;
+    if (!res.ok) return;
     const info = await res.json();
 
     settingsCurrentRef.textContent = info.ref;
@@ -3313,9 +3324,7 @@ async function fetchSourceInfo() {
     }
 
     updatePinnedRefState(info.pinnedRef || 'main');
-    return info;
   } catch { /* best-effort */ }
-  return null;
 }
 
 async function loadFolderBrowser() {
