@@ -43,6 +43,27 @@ async function mockSwitchRef(page, { succeed = true } = {}) {
   return captured;
 }
 
+async function mockPinRef(page, { succeed = true } = {}) {
+  const captured = [];
+  await page.route('**/api/source/pin', route => {
+    const body = route.request().postDataJSON();
+    captured.push(body);
+    if (succeed) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ref: body.ref, pinnedRef: body.ref, pinned: true }),
+      });
+    }
+    return route.fulfill({
+      status: 500,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'Pin failed' }),
+    });
+  });
+  return captured;
+}
+
 /* ============================================================
    Visibility
    ============================================================ */
@@ -73,7 +94,8 @@ test('version picker shows branch input and apply button', async ({ page }) => {
 
   await expect(page.locator('#settings-github-ref')).toBeVisible();
   await expect(page.locator('#settings-apply-ref')).toBeVisible();
-  await expect(page.locator('#settings-apply-ref')).toContainText('Apply');
+  await expect(page.locator('#settings-apply-ref')).toContainText('Switch');
+  await expect(page.locator('#settings-pin-ref')).toBeVisible();
 });
 
 test('version input prepopulates with saved ref', async ({ page }) => {
@@ -105,6 +127,15 @@ test('quick switch section shows default main tag', async ({ page }) => {
   const mainTag = page.locator('.settings-ref-tag[data-ref="main"]');
   await expect(mainTag).toBeVisible();
   await expect(mainTag).toContainText('main');
+});
+
+test('pinned default row shows current pinned ref', async ({ page }) => {
+  await setupApp(page, { githubSource: true });
+  await mockSourceAPI(page, { ref: 'develop', cachedRefs: ['main', 'develop'] });
+  await openSettings(page);
+
+  await expect(page.locator('#settings-pinned-ref')).toContainText('main');
+  await expect(page.locator('#settings-unpin-ref')).toHaveClass(/hidden/);
 });
 
 test('quick switch populates cached refs from server', async ({ page }) => {
@@ -241,6 +272,22 @@ test('currently serving label updates after successful apply', async ({ page }) 
 
   await page.waitForSelector('.settings-ref-status-success', { timeout: 5_000 });
   await expect(page.locator('#settings-current-ref')).toContainText('v3.0.0');
+});
+
+test('pin sends ref to backend and shows success', async ({ page }) => {
+  await setupApp(page, { githubSource: true });
+  await mockSourceAPI(page, { ref: 'main', cachedRefs: ['main', 'release/v3'] });
+  const captured = await mockPinRef(page);
+  await page.evaluate(() => { window.location.reload = () => {}; });
+  await openSettings(page);
+
+  await page.locator('#settings-github-ref').fill('release/v3');
+  await page.locator('#settings-pin-ref').click();
+
+  await page.waitForSelector('.settings-ref-status-success', { timeout: 5_000 });
+  await expect(page.locator('#settings-ref-status')).toContainText('Pinned');
+  expect(captured.length).toBe(1);
+  expect(captured[0].ref).toBe('release/v3');
 });
 
 /* ============================================================

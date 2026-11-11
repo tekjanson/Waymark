@@ -2565,8 +2565,21 @@ html.waymark-android #search-input {
   color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 8%, transparent);
   padding: 3px 8px; border-radius: var(--radius-sm);
 }
+.settings-current-ref-pinned {
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 10%, transparent);
+}
 .settings-current-ref-row {
   margin-top: 4px;
+}
+.settings-version-pin-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.settings-ref-tag-pinned {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-success) 35%, transparent);
 }
 .settings-folder-select-btn {
   padding: 3px 10px; font-size: 0.75rem; font-weight: 600;
