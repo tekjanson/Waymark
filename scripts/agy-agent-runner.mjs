@@ -259,8 +259,10 @@ export function buildAgyPrompt({ task, templateKey, sheetId, context = '', share
     parts.push(`\nEngineering Instructions:
 1. Speed & Execution Focus:
    - Be fast, targeted, and decisive.
-   - Do NOT run lengthy test suites, audits, or exploratory scripts before making code changes.
-   - Only inspect the specific files required for the requested feature or fix.
+   - Do NOT run full test suites (e.g. \`npx playwright test\` or whole-repo audits).
+   - Do NOT try to debug or fix unrelated existing test failures in other modules.
+   - Only perform a fast syntax check (e.g. \`node --check <file>\`) on the files you modified.
+   - As soon as your edits are complete, proceed directly to commit, push, and open the PR.
 2. Branch & Implement:
    - Check out a new descriptive feature branch: \`git checkout -b <branch-name>\` (e.g. \`feature/<descriptive-name>\`).
    - Implement the requested changes directly in the relevant files.
