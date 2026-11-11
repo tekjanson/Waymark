@@ -62,6 +62,21 @@ export function renderMarkdown(container, text) {
         continue;
       }
 
+      if (/^>\s?/.test(line)) {
+        const bqLines = [];
+        while (i < lines.length && /^>\s?/.test(lines[i].trimEnd())) {
+          bqLines.push(lines[i].trimEnd().replace(/^>\s?/, ''));
+          i++;
+        }
+        const bq = el('blockquote', { className: 'agent-md-blockquote' });
+        bqLines.forEach((bql, bqIdx) => {
+          if (bqIdx > 0) bq.appendChild(el('br'));
+          renderInlineMarkdown(bq, bql);
+        });
+        container.appendChild(bq);
+        continue;
+      }
+
       if (/^[-*+]\s/.test(line)) {
         const ul = el('ul', { className: 'agent-md-ul' });
         while (i < lines.length && /^[-*+]\s/.test(lines[i].trimEnd())) {
@@ -93,13 +108,16 @@ export function renderMarkdown(container, text) {
           i++;
           break;
         }
-        if (/^(#{1,3})\s|^[-*+]\s|^\d+\.\s|^\|.+\||^(\s*[-*_]){3,}\s*$/.test(current)) break;
+        if (/^(#{1,3})\s|^[-*+]\s|^\d+\.\s|^\|.+\||^(\s*[-*_]){3,}\s*|^>\s?/.test(current)) break;
         paraLines.push(current);
         i++;
       }
       if (paraLines.length) {
         const p = el('p', {});
-        renderInlineMarkdown(p, paraLines.join(' ').trim());
+        paraLines.forEach((pline, pidx) => {
+          if (pidx > 0) p.appendChild(el('br'));
+          renderInlineMarkdown(p, pline);
+        });
         container.appendChild(p);
       }
     }
@@ -148,7 +166,7 @@ function buildMarkdownTable(lines) {
  * @param {string} text
  */
 function renderInlineMarkdown(parent, text) {
-  const pattern = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[([^\]]+)\]\(([^)]+)\))/g;
+  const pattern = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|~~[^~]+~~|\[([^\]]+)\]\(([^)]+)\)|(#\/(?:sheet|public)\/[a-zA-Z0-9_-]+)|(https?:\/\/[^\s<>"']+))/g;
   let lastIndex = 0;
   let match;
 
@@ -158,22 +176,52 @@ function renderInlineMarkdown(parent, text) {
     }
     const token = match[0];
     if (token.startsWith('`')) {
-      parent.appendChild(el('code', { className: 'agent-inline-code' }, [token.slice(1, -1)]));
+      parent.appendChild(el('code', { className: 'agent-inline-code chat-inline-code' }, [token.slice(1, -1)]));
     } else if (token.startsWith('**')) {
       parent.appendChild(el('strong', {}, [token.slice(2, -2)]));
+    } else if (token.startsWith('~~')) {
+      parent.appendChild(el('del', {}, [token.slice(2, -2)]));
     } else if (token.startsWith('*')) {
       parent.appendChild(el('em', {}, [token.slice(1, -1)]));
     } else if (token.startsWith('[')) {
       const label = match[2];
       const href = match[3];
       const safeSrc = /^(https?:\/\/|#)/.test(href) ? href : '#';
-      const link = el('a', {
-        className: 'agent-md-link',
+      const linkProps = {
+        className: 'agent-md-link chat-link',
         href: safeSrc,
-        target: safeSrc.startsWith('#') ? '_self' : '_blank',
-        rel: 'noopener noreferrer',
-      }, [label]);
+      };
+      if (!safeSrc.startsWith('#')) {
+        linkProps.target = '_blank';
+        linkProps.rel = 'noopener noreferrer';
+      }
+      const link = el('a', linkProps, [label]);
       parent.appendChild(link);
+    } else if (match[4]) {
+      const hashUrl = match[4];
+      const link = el('a', {
+        className: 'agent-md-link chat-link',
+        href: hashUrl,
+      }, [hashUrl]);
+      parent.appendChild(link);
+    } else if (match[5]) {
+      let rawUrl = match[5];
+      const trail = rawUrl.match(/[.,;:!?)\]}'"]+$/);
+      let suffix = '';
+      if (trail) {
+        suffix = trail[0];
+        rawUrl = rawUrl.slice(0, -trail[0].length);
+      }
+      const link = el('a', {
+        className: 'agent-md-link chat-link',
+        href: rawUrl,
+        target: '_blank',
+        rel: 'noopener noreferrer',
+      }, [rawUrl]);
+      parent.appendChild(link);
+      if (suffix) {
+        parent.appendChild(document.createTextNode(suffix));
+      }
     }
     lastIndex = pattern.lastIndex;
   }
