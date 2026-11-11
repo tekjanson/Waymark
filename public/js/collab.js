@@ -270,13 +270,21 @@ async function findExistingShareLedger(target) {
   // ambiguous: every Waymarker who ever added me created a file by that exact
   // name, so a bare name match can surface a stranger's — or the AI companion's —
   // chat. Keep a self-named match only when its participants include the target.
+  //
+  // For the AI agent target, a `contact:<me>` file is NEVER the agent ledger: the
+  // agent ledger is always the `contact-pair:assistant::<me>` file. A human pair
+  // ledger (e.g. the one my partner created for me) can still mention the agent in
+  // its participant columns and would otherwise pass the involvesContact check,
+  // get ranked primary, and — via the host switcher — get pinned as the "Shared
+  // Agent", stranding the browser on a sheet the agent never joins. So drop
+  // self-named legacy matches entirely when resolving the agent.
   const selfLegacy = new Set(identity.selfLegacyKeys || []);
   for (let i = 0; i < legacyKeys.length; i++) {
     const legacyKey = legacyKeys[i];
     const files = searchResults[i + 1] || [];
     for (const file of files) {
       if (!file?.id || candidates.some(c => c.id === file.id)) continue;
-      if (selfLegacy.has(legacyKey) && !(await ledgerInvolvesContact(file, identity.contactEmail))) continue;
+      if (selfLegacy.has(legacyKey) && (isAgentTarget || !(await ledgerInvolvesContact(file, identity.contactEmail)))) continue;
       candidates.push(file);
     }
   }
