@@ -95,7 +95,7 @@ function tailLines(text, n = 8) {
 
 const DEFAULT_MODEL = process.env.AGY_MODEL || 'gemini-3.8-flash-high';
 const DEFAULT_TIMEOUT_MS = parseInt(process.env.AGY_TIMEOUT_MS || '180000', 10);
-const DEFAULT_CODE_TIMEOUT_MS = parseInt(process.env.WAYMARK_AGY_CODE_TIMEOUT_MS || '900000', 10);
+const DEFAULT_CODE_TIMEOUT_MS = parseInt(process.env.WAYMARK_AGY_CODE_TIMEOUT_MS || '2700000', 10); // 45 minutes
 
 /**
  * Resolve the `agy` CLI binary across Linux, macOS, and Windows.
@@ -257,12 +257,13 @@ export function buildAgyPrompt({ task, templateKey, sheetId, context = '', share
 
     parts.push(`\nUser Request: ${task}`);
     parts.push(`\nEngineering Instructions:
-1. Speed & Execution Focus:
-   - Be fast, targeted, and decisive.
-   - Do NOT run full test suites (e.g. \`npx playwright test\` or whole-repo audits).
-   - Do NOT try to debug or fix unrelated existing test failures in other modules.
-   - Only perform a fast syntax check (e.g. \`node --check <file>\`) on the files you modified.
-   - As soon as your edits are complete, proceed directly to commit, push, and open the PR.
+1. Scope Discipline & Anti-Rabbit Hole Rules:
+   - Stay strictly focused on the user's specific request and minimum necessary files.
+   - Do NOT run full-repo test suites (e.g. \`npx playwright test\` or whole-repo audits) — doing so encounters unrelated pre-existing test failures and stalls execution.
+   - Do NOT investigate, fix, or debug pre-existing failures or warnings in unrelated modules.
+   - Only perform fast syntax checks (e.g. \`node --check <file>\`) or run a targeted test that directly tests the code you modified.
+   - If you encounter an unrelated test failure or warning, ignore it and do NOT let it block you. Note it in the PR description under 'Notes' if relevant.
+   - As soon as your edits are complete and pass syntax checks, proceed directly to commit, push, and open the PR.
 2. Branch & Implement:
    - Check out a new descriptive feature branch: \`git checkout -b <branch-name>\` (e.g. \`feature/<descriptive-name>\`).
    - Implement the requested changes directly in the relevant files.

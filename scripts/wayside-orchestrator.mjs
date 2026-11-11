@@ -1456,7 +1456,80 @@ export class WaysideOrchestrator {
       const identity = this.resolveRequesterIdentity(senderKey);
       console.log(`[WaysideOrchestrator] 👤 Requester='${senderKey}' → actingAs='${identity.actingAs || '(none)'}' | canAct=${identity.canActAsRequester} | ${identity.reason} | token='${identity.tokenPath || 'none'}'`);
 
-      if (!identity.canActAsRequester && !classification.isCodeTask) {
+      if (classification.isCodeTask) {
+        const recipientEmail = sender.includes('@') ? sender : (this.userEmail || sender);
+        const ackText = `🛠️ **Starting work on your request:**\n> "${text}"\n\nI'm checking out a feature branch, implementing the code changes, and opening a Pull Request for review. I'll post the branch and PR link here as soon as it's up on GitHub! 🚀`;
+
+        // Update conversation memory with user message and acknowledgment
+        conv.history.push({ role: sender, text: text.slice(0, 300) });
+        conv.history.push({ role: this.agentName, text: ackText.slice(0, 300) });
+        if (conv.history.length > 10) conv.history.splice(0, conv.history.length - 10);
+        this.conversations.set(convKey, conv);
+        if (activeThreadId === 'default') this.conversations.set(senderKey, conv);
+
+        // Immediate acknowledgment delivered into the Wayside chat
+        await this.deliverReply({
+          replyText: ackText,
+          targetUser: recipientEmail,
+          shareTargets,
+          threadId: activeThreadId,
+          threadTitle: conv.threadTitle,
+        });
+
+        // Run the agent task asynchronously in the background so it can spin as needed without timing out or blocking chat
+        (async () => {
+          let typingTimer = null;
+          try {
+            typingTimer = setInterval(() => this.broadcastTyping(), 8000);
+            console.log(`[WaysideOrchestrator] 🚀 Async background code task starting for '${senderKey}' in thread '${activeThreadId}'...`);
+            const agyResult = await runAgyTask({
+              task: text,
+              templateKey: null,
+              sheetId: null,
+              context: contextLines.join('\n'),
+              shareWith: shareTargets,
+              tokenPath: identity.tokenPath,
+              expectedEmail: '',
+              isCodeTask: true,
+            });
+
+            let completionText = '';
+            if (agyResult.ok) {
+              completionText = agyResult.output;
+            } else {
+              const who = agyResult.actingAs ? ` (acting as ${agyResult.actingAs})` : '';
+              completionText = `⚠️ I couldn't complete that PR request${who}.\n\n${agyResult.error}${agyResult.logFile ? `\n\nLog: \`${agyResult.logFile}\`` : ''}`;
+            }
+
+            conv.history.push({ role: this.agentName, text: completionText.slice(0, 300) });
+            if (conv.history.length > 10) conv.history.splice(0, conv.history.length - 10);
+            this.conversations.set(convKey, conv);
+
+            await this.deliverReply({
+              replyText: completionText,
+              targetUser: recipientEmail,
+              shareTargets,
+              threadId: activeThreadId,
+              threadTitle: conv.threadTitle,
+            });
+            console.log(`[WaysideOrchestrator] ✅ Background code task completed & delivered to '${recipientEmail}' in thread '${activeThreadId}'`);
+          } catch (err) {
+            console.error(`[WaysideOrchestrator] ❌ Error in background code task:`, err);
+            await this.deliverReply({
+              replyText: `⚠️ An unexpected error occurred while processing the code task: ${err.message}`,
+              targetUser: recipientEmail,
+              shareTargets,
+              threadId: activeThreadId,
+              threadTitle: conv.threadTitle,
+            }).catch(() => {});
+          } finally {
+            if (typingTimer) clearInterval(typingTimer);
+          }
+        })();
+        return;
+      }
+
+      if (!identity.canActAsRequester) {
         // Refuse to create/modify under the wrong account. Tell the requester
         // exactly how to connect so their next request lands in THEIR Drive.
         console.warn(`[WaysideOrchestrator] ⛔ Not acting for '${senderKey}' (${identity.reason}) — refusing host fallback so nothing is created in the wrong account.`);
@@ -1490,8 +1563,8 @@ export class WaysideOrchestrator {
           context: contextLines.join('\n'),
           shareWith: shareTargets,
           tokenPath: identity.tokenPath,
-          expectedEmail: classification.isCodeTask ? '' : identity.actingAs,
-          isCodeTask: Boolean(classification.isCodeTask),
+          expectedEmail: identity.actingAs,
+          isCodeTask: false,
         });
 
         if (agyResult.ok) {
