@@ -74,12 +74,12 @@ const DEFAULT_HOME_WIDGETS = [
   { id: 'starter-folders', type: 'folders', title: 'Pinned waypoints', size: 'normal' },
 ];
 const WIDGET_TYPES = {
+  sheet: { label: 'Any Waymark', icon: '📄' },
   quickmarks: { label: 'Quick actions', icon: '⚡' },
   overview: { label: 'Overview', icon: '📊' },
   recent: { label: 'Recent Waymarks', icon: '🕒' },
   pinned: { label: 'Pinned Waymarks', icon: '📌' },
   folders: { label: 'Pinned waypoints', icon: '📁' },
-  sheet: { label: 'Any Waymark', icon: '📄' },
 };
 const QUICK_MARK_ACTIONS = [
   { id: 'create', label: 'New Waymark', shortLabel: 'New Waymark', icon: '📝', detail: 'Start a new Waymark' },
@@ -569,18 +569,18 @@ function ensureWidgetManager() {
   if (widgetManager) return widgetManager;
 
   const typeSelect = el('select', { className: 'wayboard-widget-control', name: 'type' }, Object.entries(WIDGET_TYPES).map(([value, option]) =>
-    el('option', { value }, [`${option.icon} ${option.label}`])
+    el('option', { value, ...(value === 'sheet' ? { selected: 'selected' } : {}) }, [`${option.icon} ${option.label}`])
   ));
   const titleInput = el('input', {
     className: 'wayboard-widget-control', name: 'title', type: 'text', maxlength: '48',
-    placeholder: 'Widget name', autocomplete: 'off',
+    placeholder: 'Any Waymark', autocomplete: 'off',
   });
   const sheetSelect = el('select', { className: 'wayboard-widget-control', name: 'sheet', id: 'wayboard-widget-source' });
   const browseDriveButton = el('button', {
     className: 'btn-secondary btn-sm wayboard-widget-drive-button', type: 'button',
     title: 'Browse Google Drive for a Waymark',
   }, ['Browse Drive']);
-  const sheetLabel = el('div', { className: 'wayboard-widget-field wayboard-widget-sheet-field hidden' }, [
+  const sheetLabel = el('div', { className: 'wayboard-widget-field wayboard-widget-sheet-field' }, [
     el('label', { for: 'wayboard-widget-source' }, ['Waymark to show']),
     el('div', { className: 'wayboard-widget-sheet-picker' }, [sheetSelect, browseDriveButton]),
   ]);
@@ -708,6 +708,7 @@ function ensureWidgetManager() {
   typeSelect.addEventListener('change', () => {
     refreshSheetOptions();
     if (typeSelect.value === 'quickmarks' && !quickmarkOptions.children.length) refreshQuickmarkOptions();
+    if (!titleInput.value.trim()) titleInput.placeholder = widgetTitle(typeSelect.value, sheetSelect.value);
   });
   sheetSelect.addEventListener('change', () => {
     updateSubmitState();
@@ -778,6 +779,8 @@ function ensureWidgetManager() {
     await saveWidgets(next);
     form.dataset.editingId = '';
     form.reset();
+    typeSelect.value = 'sheet';
+    titleInput.placeholder = 'Any Waymark';
     submitButton.textContent = 'Add widget';
     refreshQuickmarkOptions();
     refreshSheetOptions();
@@ -798,6 +801,8 @@ function openWidgetManager(editingId = '') {
   widgetManagerReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   manager.form.dataset.editingId = '';
   manager.form.reset();
+  manager.typeSelect.value = 'sheet';
+  manager.titleInput.placeholder = 'Any Waymark';
   manager.submitButton.textContent = 'Add widget';
   manager.refreshQuickmarkOptions(QUICK_MARK_ACTION_IDS);
   manager.refreshSheetOptions();

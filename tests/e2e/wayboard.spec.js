@@ -61,6 +61,18 @@ test('Wayboard widgets render the selected Waymark with its detected template', 
   await expect(bread).toHaveAttribute('class', breadState);
 });
 
+test('Add a widget defaults to Any Waymark option', async ({ page }) => {
+  await setupApp(page);
+  await page.click('#wayboard-add-widget');
+  const typeSelect = page.locator('.wayboard-widget-dialog select[name="type"]');
+  await expect(typeSelect).toHaveValue('sheet');
+  const selectedText = await typeSelect.locator('option:checked').textContent();
+  expect(selectedText).toContain('Any Waymark');
+  await expect(page.locator('.wayboard-widget-sheet-field')).toBeVisible();
+  await expect(page.locator('.wayboard-widget-quickmark-options')).toBeHidden();
+  await expect(page.locator('.wayboard-widget-form button[type="submit"]')).toBeDisabled();
+});
+
 test('Quick actions can be selected and reordered inside their own widget', async ({ page }) => {
   await setupApp(page);
   const quickmarks = page.locator('.wayboard-widget-quickmarks');
