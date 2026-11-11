@@ -2734,8 +2734,8 @@ function openSettingsModal() {
     });
   }
 
-  // Version picker (only visible when GitHub source is active)
-  if (window.__WAYMARK_GITHUB_SOURCE && settingsVersionSection) {
+  // Version picker (visible when GitHub source mode is available)
+  if (settingsVersionSection) {
     settingsVersionSection.classList.remove('hidden');
     const savedRef = userData.getGithubRef();
     settingsGithubRef.value = savedRef;
@@ -2749,8 +2749,12 @@ function openSettingsModal() {
       btn.classList.remove('settings-ref-tag-pinned');
     });
 
-    // Fetch available info from backend (best-effort)
-    fetchSourceInfo();
+    // Fetch backend source info to confirm availability.
+    // If runtime flags are stale/missing but the source API is live, keep this enabled.
+    fetchSourceInfo().then((info) => {
+      const hasGithubSource = Boolean(window.__WAYMARK_GITHUB_SOURCE) || Boolean(info?.mode === 'github') || Boolean(info?.ref);
+      settingsVersionSection.classList.toggle('hidden', !hasGithubSource);
+    });
   }
 
   settingsModal.classList.remove('hidden');
@@ -3282,7 +3286,7 @@ async function fetchSourceInfo() {
   try {
     const base = window.__WAYMARK_BASE || '';
     const res = await fetch(`${base}/api/source`);
-    if (!res.ok) return;
+    if (!res.ok) return null;
     const info = await res.json();
 
     settingsCurrentRef.textContent = info.ref;
@@ -3309,7 +3313,9 @@ async function fetchSourceInfo() {
     }
 
     updatePinnedRefState(info.pinnedRef || 'main');
+    return info;
   } catch { /* best-effort */ }
+  return null;
 }
 
 async function loadFolderBrowser() {
