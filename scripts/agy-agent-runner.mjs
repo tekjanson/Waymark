@@ -95,6 +95,7 @@ function tailLines(text, n = 8) {
 
 const DEFAULT_MODEL = process.env.AGY_MODEL || 'gemini-3.8-flash-high';
 const DEFAULT_TIMEOUT_MS = parseInt(process.env.AGY_TIMEOUT_MS || '180000', 10);
+const DEFAULT_CODE_TIMEOUT_MS = parseInt(process.env.WAYMARK_AGY_CODE_TIMEOUT_MS || '900000', 10);
 
 /**
  * Resolve the `agy` CLI binary across Linux, macOS, and Windows.
@@ -216,13 +217,67 @@ export function extractFileReferences(text) {
 }
 
 /**
+ * Extract GitHub Pull Request URL and branch references from text.
+ * @param {string} text
+ * @returns {{ prUrl: string|null, prNumber: string|null, branch: string|null }}
+ */
+export function extractPrReferences(text) {
+  if (!text) return { prUrl: null, prNumber: null, branch: null };
+  const prMatch = text.match(/https:\/\/github\.com\/[^\s)]+\/pull\/(\d+)/i);
+  const branchMatch = text.match(/\b(?:branch|checkout -b)\s+([a-zA-Z0-9_\-\.\/]+)/i);
+  return {
+    prUrl: prMatch ? prMatch[0] : null,
+    prNumber: prMatch ? prMatch[1] : null,
+    branch: branchMatch ? branchMatch[1] : null,
+  };
+}
+
+/**
  * Build the prompt delivered to agy.
  */
-export function buildAgyPrompt({ task, templateKey, sheetId, context = '', shareWith = [] }) {
+export function buildAgyPrompt({ task, templateKey, sheetId, context = '', shareWith = [], isCodeTask = false }) {
   const parts = [];
   const validShareWith = (Array.isArray(shareWith) ? shareWith : [])
     .map(e => String(e || '').trim().toLowerCase())
     .filter(e => e && e.includes('@') && !e.endsWith('.internal') && !e.endsWith('.local'));
+
+  const detectedCodeTask = Boolean(isCodeTask) ||
+    /\b(pull\s*request|pr)\b/i.test(task) ||
+    /\b(branch|checkout|commit|merge\s*request)\b/i.test(task) ||
+    /\b(in\s+the\s+(?:waymark\s+)?repo|codebase|repository|waymark\s+branch)\b/i.test(task) ||
+    /\b(put\s+up\s+(?:a\s+)?(?:new\s+)?(?:waymark\s+)?branch|put\s+up\s+for\s+pr|make\s+(?:a\s+)?pr)\b/i.test(task);
+
+  if (detectedCodeTask) {
+    parts.push(`You are Waymark AI, an autonomous software engineer running directly on bare metal on the Waymark repository at '${ROOT}'.`);
+    parts.push(`You have full execution and tool access on this machine (file reading/writing, terminal commands, git, gh CLI, npm, node).`);
+
+    if (context) {
+      parts.push(`Conversation context:\n${context}`);
+    }
+
+    parts.push(`\nUser Request: ${task}`);
+    parts.push(`\nEngineering Instructions:
+1. Speed & Execution Focus:
+   - Be fast, targeted, and decisive.
+   - Do NOT run lengthy test suites, audits, or exploratory scripts before making code changes.
+   - Only inspect the specific files required for the requested feature or fix.
+2. Branch & Implement:
+   - Check out a new descriptive feature branch: \`git checkout -b <branch-name>\` (e.g. \`feature/<descriptive-name>\`).
+   - Implement the requested changes directly in the relevant files.
+   - Stage and commit changes promptly: \`git commit -am "<descriptive message>"\`.
+3. Push & Create Pull Request:
+   - Push the branch to GitHub: \`git push -u origin <branch-name>\`.
+   - Open a Pull Request non-interactively using GitHub CLI:
+     \`gh pr create --base main --head <branch-name> --title "<Clear Title>" --body "<Detailed description of changes>"\`
+   - CRITICAL: Never merge the PR; only create it and submit it for review.
+4. Summary:
+   - In your final response, provide:
+     - Branch name: \`<branch-name>\`
+     - Pull Request link: \`https://github.com/.../pull/...\`
+     - A concise summary of what was implemented.`);
+
+    return parts.join('\n\n');
+  }
 
   parts.push(`You are Waymark AI, an autonomous data assistant.`);
   if (templateKey) {
@@ -259,8 +314,9 @@ export function buildAgyPrompt({ task, templateKey, sheetId, context = '', share
    - After creating data that clearly relates to another existing Waymark, you MAY record it with waymark_link_entries(...). Skip all graph steps for simple, standalone requests (e.g. "add a recipe", "log an expense").
 3. When creating a new sheet, output the viewer link: [Sheet Title](#/sheet/<spreadsheetId>)
 4. When creating or linking a doc, output the doc link: [Doc Title](https://docs.google.com/document/d/<documentId>/edit)
-5. Be fast and decisive: plan the whole task first, then use the fewest tool calls needed. Avoid redundant reads — reuse data you already fetched and batch related writes. Do not re-read a sheet you just wrote unless verification is essential.
-6. Provide a friendly, concise summary of what you did.`);
+5. If the user's request is an engineering task (e.g. modifying Waymark code, creating a branch, or opening a PR), switch to engineering mode: check out a git branch, modify the files, commit, push, and open a PR with gh pr create.
+6. Be fast and decisive: plan the whole task first, then use the fewest tool calls needed. Avoid redundant reads — reuse data you already fetched and batch related writes. Do not re-read a sheet you just wrote unless verification is essential.
+7. Provide a friendly, concise summary of what you did.`);
 
   return parts.join('\n\n');
 }
@@ -398,11 +454,19 @@ export async function runAgyTask({
   shareWith = [],
   tokenPath = null,
   expectedEmail = '',
+  isCodeTask = false,
   model = DEFAULT_MODEL,
-  timeoutMs = DEFAULT_TIMEOUT_MS,
+  timeoutMs = null,
   cwd = ROOT,
 }) {
-  const prompt = buildAgyPrompt({ task, templateKey, sheetId, context, shareWith });
+  const effectiveIsCodeTask = Boolean(isCodeTask) ||
+    /\b(pull\s*request|pr)\b/i.test(task) ||
+    /\b(branch|checkout|commit|merge\s*request)\b/i.test(task) ||
+    /\b(in\s+the\s+(?:waymark\s+)?repo|codebase|repository|waymark\s+branch)\b/i.test(task) ||
+    /\b(put\s+up\s+(?:a\s+)?(?:new\s+)?(?:waymark\s+)?branch|put\s+up\s+for\s+pr|make\s+(?:a\s+)?pr)\b/i.test(task);
+
+  const effectiveTimeoutMs = timeoutMs || (effectiveIsCodeTask ? DEFAULT_CODE_TIMEOUT_MS : DEFAULT_TIMEOUT_MS);
+  const prompt = buildAgyPrompt({ task, templateKey, sheetId, context, shareWith, isCodeTask: effectiveIsCodeTask });
   const start = Date.now();
   const { bin: agyBin, useShell } = resolveAgyBinary();
 
@@ -426,14 +490,13 @@ export async function runAgyTask({
   // this MUST be the requester (e.g. the collaborator), not the host owner —
   // otherwise Waymarks are created in the wrong Drive. Surfaced in diagnostics.
   const actingAs = identityForToken(resolvedOAuth);
-  process.stderr.write(`[agy] task start — acting as: ${actingAs || 'UNKNOWN'} | token: ${resolvedOAuth || 'none'} | template: ${templateKey || 'auto'}\n`);
+  process.stderr.write(`[agy] task start — acting as: ${actingAs || 'UNKNOWN'} | token: ${resolvedOAuth || 'none'} | template: ${templateKey || 'auto'} | codeTask: ${effectiveIsCodeTask}\n`);
 
-  // Final safety net: never act under the wrong Google account. When the caller
-  // tells us who the requester is (expectedEmail), the resolved token's identity
-  // MUST match. A mismatch means we'd silently create/modify Waymarks in someone
-  // else's Drive — refuse rather than do that.
+  // Final safety net: never act under the wrong Google account for Drive tasks.
+  // Code tasks operate on the local git repository and GitHub CLI, so they do
+  // not require a Drive requester token.
   const wantEmail = String(expectedEmail || '').trim().toLowerCase();
-  if (wantEmail && actingAs && actingAs !== wantEmail) {
+  if (!effectiveIsCodeTask && wantEmail && actingAs && actingAs !== wantEmail) {
     const durationMs = Date.now() - start;
     const errorMsg = `Identity mismatch: resolved OAuth token acts as '${actingAs}' but the requester is '${wantEmail}'. Refusing to run so Waymarks never land in the wrong account.`;
     const logFile = writeTaskLog({
@@ -443,7 +506,7 @@ export async function runAgyTask({
     process.stderr.write(`[agy] ❌ ${errorMsg} — log: ${logFile || 'n/a'}\n`);
     return { ok: false, output: '', error: errorMsg, actingAs, durationMs, logFile, identityMismatch: true };
   }
-  if (wantEmail && !actingAs) {
+  if (!effectiveIsCodeTask && wantEmail && !actingAs) {
     const durationMs = Date.now() - start;
     const errorMsg = `Cannot act as '${wantEmail}': no usable OAuth token was resolved. Refusing to fall back to another account.`;
     const logFile = writeTaskLog({
@@ -478,12 +541,13 @@ export async function runAgyTask({
   try {
     const { stdout, stderr } = await spawnSafe(execCmd, execArgs, {
       cwd,
-      timeoutMs,
+      timeoutMs: effectiveTimeoutMs,
       env: childEnv,
     });
 
     const output = (stdout || '').trim();
     const refs = extractFileReferences(output);
+    const prRefs = extractPrReferences(output);
     const detectedSheetId = refs.sheetId || sheetId;
     const createdNewSheet = Boolean(refs.sheetId && refs.sheetId !== sheetId);
     const detectedDocId = refs.docId;
@@ -503,6 +567,9 @@ export async function runAgyTask({
       sheetTitle: refs.sheetTitle,
       docId: detectedDocId,
       docTitle: refs.docTitle,
+      prUrl: prRefs.prUrl,
+      prNumber: prRefs.prNumber,
+      branch: prRefs.branch,
       templateKey,
       actingAs,
       durationMs,
@@ -514,7 +581,7 @@ export async function runAgyTask({
     const errTail = tailLines(err.stderr);
     const reason = outTail || errTail || '(no output captured — the agent produced nothing)';
     const errorMsg = err.killed
-      ? `Timed out after ${timeoutMs}ms while acting as ${actingAs || 'UNKNOWN'}. Last activity:\n${reason}`
+      ? `Timed out after ${effectiveTimeoutMs}ms while acting as ${actingAs || 'UNKNOWN'}. Last activity:\n${reason}`
       : (errTail || err.message || 'Unknown agy execution error');
 
     const logFile = writeTaskLog({
