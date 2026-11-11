@@ -572,10 +572,11 @@
               <p class="settings-version-desc">Pin yourself to a specific version. Updates become optional — you choose when to move forward.</p>
 
               <div class="settings-row">
-                <span class="settings-label">Branch / Version</span>
+                <span class="settings-label">Branch / Ref</span>
                 <div class="settings-version-picker">
                   <input type="text" id="settings-github-ref" class="settings-ref-input" aria-label="GitHub reference or branch" placeholder="main" autocomplete="off" spellcheck="false">
-                  <button type="button" data-action="settings-apply-ref" id="settings-apply-ref" class="btn btn-primary btn-sm">Apply</button>
+                  <button type="button" data-action="settings-apply-ref" id="settings-apply-ref" class="btn btn-primary btn-sm">Switch</button>
+                  <button type="button" data-action="settings-pin-ref" id="settings-pin-ref" class="btn btn-secondary btn-sm">📌 Pin</button>
                 </div>
               </div>
 
@@ -592,6 +593,14 @@
                 <span class="settings-label">Currently serving</span>
                 <code id="settings-current-ref" class="settings-current-ref">main</code>
               </div>
+              <div class="settings-row settings-current-ref-row">
+                <span class="settings-label">Pinned default</span>
+                <div class="settings-version-pin-state">
+                  <code id="settings-pinned-ref" class="settings-current-ref settings-current-ref-pinned">main</code>
+                  <button type="button" data-action="settings-unpin-ref" id="settings-unpin-ref" class="btn btn-secondary btn-sm hidden">Unpin</button>
+                </div>
+              </div>
+              <p class="settings-hint settings-hint-compact"><strong>Switch</strong> is temporary for this session. <strong>Pin</strong> saves your default version in Drive across sessions and devices.</p>
             </div>
           </section>
 

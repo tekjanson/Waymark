@@ -146,9 +146,12 @@ const settingsFolderBrowser = document.getElementById('settings-folder-browser')
 const settingsVersionSection = document.getElementById('settings-version-section');
 const settingsGithubRef      = document.getElementById('settings-github-ref');
 const settingsApplyRef       = document.getElementById('settings-apply-ref');
+const settingsPinRef         = document.getElementById('settings-pin-ref');
+const settingsUnpinRef       = document.getElementById('settings-unpin-ref');
 const settingsRefStatus      = document.getElementById('settings-ref-status');
 const settingsRefSuggestions = document.getElementById('settings-ref-suggestions');
 const settingsCurrentRef     = document.getElementById('settings-current-ref');
+const settingsPinnedRef      = document.getElementById('settings-pinned-ref');
 
 /* ---------- Import Modal refs ---------- */
 const importModal         = document.getElementById('import-modal');
@@ -2737,10 +2740,13 @@ function openSettingsModal() {
     const savedRef = userData.getGithubRef();
     settingsGithubRef.value = savedRef;
     settingsCurrentRef.textContent = window.__WAYMARK_GITHUB_REF || savedRef;
+    if (settingsPinnedRef) settingsPinnedRef.textContent = 'main';
+    if (settingsUnpinRef) settingsUnpinRef.classList.add('hidden');
 
     // Highlight the active quick-switch button
     settingsRefSuggestions.querySelectorAll('.settings-ref-tag').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.ref === savedRef);
+      btn.classList.remove('settings-ref-tag-pinned');
     });
 
     // Fetch available info from backend (best-effort)
@@ -3163,7 +3169,7 @@ async function applyGithubRef() {
   }
 
   showRefStatus('Switching…', 'info');
-  settingsApplyRef.disabled = true;
+  setVersionActionsDisabled(true);
 
   try {
     // Tell the backend to switch refs
@@ -3197,7 +3203,44 @@ async function applyGithubRef() {
   } catch (err) {
     showRefStatus(`Failed: ${err.message}`, 'error');
   } finally {
-    settingsApplyRef.disabled = false;
+    setVersionActionsDisabled(false);
+  }
+}
+
+/**
+ * Persist the selected ref as the user's default pinned version.
+ */
+async function pinGithubRef(ref) {
+  if (!ref) {
+    showRefStatus('Please enter a branch, tag, or commit SHA.', 'error');
+    return;
+  }
+
+  showRefStatus('Pinning…', 'info');
+  setVersionActionsDisabled(true);
+
+  try {
+    const base = window.__WAYMARK_BASE || '';
+    const res = await fetch(`${base}/api/source/pin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ref }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Server responded with ${res.status}`);
+    }
+
+    const data = await res.json();
+    await userData.setGithubRef(data.pinnedRef || data.ref);
+    updatePinnedRefState(data.pinnedRef || data.ref);
+    showRefStatus(`📌 Pinned "${data.pinnedRef || data.ref}". Reloading…`, 'success');
+    setTimeout(() => window.location.reload(), 800);
+  } catch (err) {
+    showRefStatus(`Failed: ${err.message}`, 'error');
+  } finally {
+    setVersionActionsDisabled(false);
   }
 }
 
@@ -3212,6 +3255,27 @@ function showRefStatus(message, type) {
 }
 
 /**
+ * Disable or enable version action controls while a request is in-flight.
+ */
+function setVersionActionsDisabled(disabled) {
+  if (settingsApplyRef) settingsApplyRef.disabled = disabled;
+  if (settingsPinRef) settingsPinRef.disabled = disabled;
+  if (settingsUnpinRef) settingsUnpinRef.disabled = disabled;
+}
+
+/**
+ * Update pinned-ref indicators and quick-switch badges.
+ */
+function updatePinnedRefState(pinnedRefRaw) {
+  const pinnedRef = pinnedRefRaw || 'main';
+  if (settingsPinnedRef) settingsPinnedRef.textContent = pinnedRef;
+  if (settingsUnpinRef) settingsUnpinRef.classList.toggle('hidden', pinnedRef === 'main');
+  settingsRefSuggestions.querySelectorAll('.settings-ref-tag').forEach(btn => {
+    btn.classList.toggle('settings-ref-tag-pinned', btn.dataset.ref === pinnedRef);
+  });
+}
+
+/**
  * Fetch current source info from the backend and populate suggestions.
  */
 async function fetchSourceInfo() {
@@ -3222,6 +3286,7 @@ async function fetchSourceInfo() {
     const info = await res.json();
 
     settingsCurrentRef.textContent = info.ref;
+    updatePinnedRefState(info.pinnedRef || 'main');
 
     // Add cached refs as quick-switch options
     if (info.cachedRefs && info.cachedRefs.length > 0) {
@@ -3242,6 +3307,8 @@ async function fetchSourceInfo() {
         settingsRefSuggestions.appendChild(tag);
       }
     }
+
+    updatePinnedRefState(info.pinnedRef || 'main');
   } catch { /* best-effort */ }
 }
 
@@ -3341,6 +3408,18 @@ function initSettingsModal() {
     settingsApplyRef.addEventListener('click', () => applyGithubRef());
     settingsGithubRef.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') applyGithubRef();
+    });
+  }
+  if (settingsPinRef) {
+    settingsPinRef.addEventListener('click', () => {
+      const ref = (settingsGithubRef.value || '').trim();
+      pinGithubRef(ref);
+    });
+  }
+  if (settingsUnpinRef) {
+    settingsUnpinRef.addEventListener('click', () => {
+      settingsGithubRef.value = 'main';
+      pinGithubRef('main');
     });
   }
 
