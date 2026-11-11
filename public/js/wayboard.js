@@ -1011,21 +1011,22 @@ function renderWaysidePoppedOutPlaceholder(container, onDock, target) {
   if (!container) return;
   container.replaceChildren();
   const label = target?.label || 'Wayside';
+  const isAi = Boolean(target?.isAgent || target?.contactEmail === 'assistant@waymark.internal');
+  const icon = isAi ? '🤖' : '💬';
   const placeholder = el('div', { className: 'chat-box wayside-placeholder wayside-popped-out-placeholder', id: 'wayside-placeholder' }, [
     el('div', { className: 'chat-box-head' }, [
-      el('b', { id: 'wayside-crew-title' }, [`💬 ${label}`]),
+      el('b', { id: 'wayside-crew-title' }, [`${icon} ${label}`]),
       el('span', { className: 'badge blue' }, ['Popped Out']),
     ]),
-    el('div', { className: 'chat-sheet-line', id: 'wayside-sheet-line' }, ['Floating chat session active on screen']),
+    el('div', { className: 'chat-sheet-line', id: 'wayside-sheet-line' }, ['Floating session active · drag anywhere or truncate to bubble']),
     el('div', {
       className: 'wayside-popped-body',
-      style: 'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:20px 14px;text-align:center;color:var(--text-muted);font-size:0.88rem;',
     }, [
-      el('div', { style: 'font-size:2rem;line-height:1;' }, ['↗']),
-      el('div', {}, ['Chat session is popped out. Drag it anywhere or truncate it to a chat bubble.']),
+      el('div', { className: 'wayside-popped-icon' }, ['↗']),
+      el('div', { className: 'wayside-popped-text' }, ['Chat session is floating on screen.']),
       el('button', {
         type: 'button',
-        className: 'btn btn-outline wayside-dock-btn',
+        className: 'btn btn-secondary wayside-dock-btn',
         id: 'wayside-dock-btn',
         title: 'Dock chat back to the Wayside column',
         on: { click: onDock },
@@ -1290,6 +1291,7 @@ async function selectTarget(target, host) {
   const wasPoppedOut = Boolean(_waysideWidget?.isPoppedOut);
   const wasBubbleMode = Boolean(_waysideWidget?.isBubbleMode);
   const savedPos = _waysideWidget?._savedPos;
+  const savedSize = _waysideWidget?._savedSize;
 
   teardownWaysideWidget();
   chatContainer.replaceChildren();
@@ -1308,13 +1310,14 @@ async function selectTarget(target, host) {
     isPoppedOut: wasPoppedOut,
     isBubbleMode: wasBubbleMode,
     savedPos,
+    savedSize,
     dockContainer: chatContainer,
     bubbleIcon: isAgentTarget ? '🤖' : (target.label ? target.label[0].toUpperCase() : '💬'),
     sheetId: _activeLedgerId || '',
     signal: _activeLedgerId ? collab.createLedgerSignal(_activeLedgerId) : null,
     displayName,
     userEmail,
-    title: `💬 ${target.label}`,
+    title: `${isAgentTarget ? '🤖' : '💬'} ${target.label}`,
     subtitle: formatWaysideSubtitle(isAgentTarget, _activeLedgerId, ledger),
     mountTo: wasPoppedOut ? document.body : chatContainer,
     showClose: true,
