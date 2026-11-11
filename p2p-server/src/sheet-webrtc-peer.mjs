@@ -965,6 +965,13 @@ export class SheetWebRtcPeer {
     }
 
     _shouldInitiateHandshake(remotePeerId, remoteBlock) {
+        // Agents (peerId prefixed `ai-`) always answer non-agent peers because the
+        // werift offerer path with a browser answerer is unreliable. Keep this in
+        // sync with _shouldInitiate() in public/js/webrtc.js.
+        const iAmAgent = String(this.peerId || '').startsWith('ai-');
+        const remoteIsAgent = String(remotePeerId || '').startsWith('ai-');
+        if (iAmAgent !== remoteIsAgent) return !iAmAgent;
+
         if (this.block > remoteBlock) return true;
         if (this.block < remoteBlock) return false;
         return this.peerId < remotePeerId;

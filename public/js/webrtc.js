@@ -1076,7 +1076,7 @@ export class WaymarkConnect {
           continue;
         }
 
-        const weInit = this.peerId < remote.peerId;
+        const weInit = _shouldInitiate(this.peerId, remote.peerId);
 
         if (weInit) {
           // === INITIATOR: we create offer, wait for answer ===
@@ -1611,4 +1611,25 @@ export class WaymarkConnect {
 function _json(v) {
   if (!v) return null;
   try { return JSON.parse(v); } catch { return null; }
+}
+
+/**
+ * Decide which side builds the WebRTC offer for a pair, computed identically on
+ * every peer so both sides agree without extra signaling.
+ *
+ * The Wayside AI agent runs on werift (Node.js), whose offerer path with a
+ * browser answerer is unreliable — the DataChannel opens then drops within
+ * seconds, looping forever. The browser's native WebRTC stack as the offerer is
+ * rock-solid. So an AI agent peer (peerId prefixed `ai-`) always answers a
+ * non-agent peer; the non-agent (browser/native client) always offers. Same-type
+ * pairs fall back to deterministic lexicographic peerId ordering.
+ * @param {string} myPeerId
+ * @param {string} remotePeerId
+ * @returns {boolean} true when THIS peer should create the offer
+ */
+function _shouldInitiate(myPeerId, remotePeerId) {
+  const iAmAgent = String(myPeerId || '').startsWith('ai-');
+  const remoteIsAgent = String(remotePeerId || '').startsWith('ai-');
+  if (iAmAgent !== remoteIsAgent) return !iAmAgent;
+  return String(myPeerId) < String(remotePeerId);
 }

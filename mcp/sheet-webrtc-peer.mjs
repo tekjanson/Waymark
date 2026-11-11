@@ -998,6 +998,16 @@ export class SheetWebRtcPeer {
     }
 
     _shouldInitiateHandshake(remotePeerId, remoteBlock) {
+        // The AI agent runs on werift (Node.js), whose offerer path with a browser
+        // answerer is unreliable — the DataChannel opens then drops within seconds,
+        // looping forever (stuck in state=offering). The browser's native WebRTC as
+        // the offerer is rock-solid. So the agent always ANSWERS a non-agent peer and
+        // never offers to one; the browser/native client always offers to the agent.
+        // This must match _shouldInitiate() in public/js/webrtc.js so both sides agree.
+        const iAmAgent = String(this.peerId || '').startsWith('ai-');
+        const remoteIsAgent = String(remotePeerId || '').startsWith('ai-');
+        if (iAmAgent !== remoteIsAgent) return !iAmAgent;
+
         if (this._initiatorRule === 'peerId') {
             return this.peerId < remotePeerId;
         }
