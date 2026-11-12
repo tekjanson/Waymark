@@ -198,8 +198,13 @@ const ROOT = path.resolve(__dirname, '../..');
 
     expect(peer.tabName).toBe('WebRTC_Signaling');
     expect(peer.blockStart).toBe(2);
-    expect(peer._shouldInitiateHandshake('zz-999999', 7)).toBe(true);
+    // The agent (ai-*) ALWAYS answers a browser peer and never offers to one —
+    // the werift offerer path with a browser answerer is unreliable. The
+    // peerId election rule only applies between two same-type peers.
+    expect(peer._shouldInitiateHandshake('zz-999999', 7)).toBe(false);
     expect(peer._shouldInitiateHandshake('aa-000000', 2)).toBe(false);
+    expect(peer._shouldInitiateHandshake('ai-999999', 7)).toBe(true);
+    expect(peer._shouldInitiateHandshake('ai-000000', 2)).toBe(false);
 
     const sent = [];
     peer._pcs.set('remote-1', {
@@ -809,4 +814,116 @@ test('runAgyTask refuses to run when the resolved token is not the requester', a
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+test('classifyMessage uses word boundaries so substrings never misroute', async () => {
+  const { classifyMessage } = await import('../../scripts/wayside-orchestrator.mjs');
+  // "wayboard" must NOT match kanban's "board"; it is a sheet request, not code.
+  const wayboard = classifyMessage('Add a card to my kanban to fix the wayboard ui');
+  expect(wayboard.isCodeTask).toBe(false);
+  expect(wayboard.templateKey).toBe('kanban');
+  // "ai-router" must NOT match travel's "route".
+  const router = classifyMessage('update the ai-router config');
+  expect(router.templateKey).not.toBe('travel');
+  // Explicit repo/PR intent still classifies as a code task.
+  const code = classifyMessage('open a pull request in the waymark repo to refactor the server module');
+  expect(code.isCodeTask).toBe(true);
+});
+
+test('classifyMessage returns ranked candidateTemplates for multi-domain requests', async () => {
+  const { classifyMessage } = await import('../../scripts/wayside-orchestrator.mjs');
+  const res = classifyMessage('Plan a vacation trip to Maui and track the travel budget expenses');
+  expect(Array.isArray(res.candidateTemplates)).toBe(true);
+  expect(res.candidateTemplates.length).toBeGreaterThanOrEqual(1);
+  const keys = res.candidateTemplates.map(c => c.key);
+  expect(keys).toContain(res.templateKey);
+});
+
+test('extractFileReferences returns allSheets and allDocs for multi-artifact responses', async () => {
+  const { extractFileReferences } = await import('../../scripts/agy-agent-runner.mjs');
+  const s1 = '1Jl-fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4';
+  const s2 = '1AbcfmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4';
+  const d1 = '1Doc_fmWVEGatzOORp4wPQwPpg78binoBlCWATP9xb_q4';
+  const res = extractFileReferences(
+    `Created [Budget](#/sheet/${s1}) and [Packing List](#/sheet/${s2}) plus a [Trip Doc](https://docs.google.com/document/d/${d1}/edit)`
+  );
+  expect(res.sheetId).toBe(s1);
+  expect(res.allSheets.length).toBe(2);
+  expect(res.allSheets.map(s => s.sheetId)).toContain(s2);
+  expect(res.allDocs.length).toBe(1);
+  expect(res.allDocs[0].docId).toBe(d1);
+});
+
+test('buildAgyPrompt injects custom tuning, candidate templates, and thread sheets', async () => {
+  const { buildAgyPrompt } = await import('../../scripts/agy-agent-runner.mjs');
+  const prompt = buildAgyPrompt({
+    task: 'Add a row to the budget',
+    templateKey: 'budget',
+    candidateTemplates: [{ key: 'budget', name: 'Budget' }, { key: 'meal', name: 'Meal Planner' }],
+    threadSheets: [{ sheetId: 'sheet-77', title: 'March Budget', templateKey: 'budget' }],
+    tuning: 'Be concise, witty, and always include protein macros.',
+  });
+  expect(prompt).toContain('Be concise, witty, and always include protein macros.');
+  expect(prompt).toContain('waymark-meal');
+  expect(prompt).toContain('sheet-77');
+});
+
+test('buildAgyPrompt conversational mode skips MCP tools but keeps tuning voice', async () => {
+  const { buildAgyPrompt } = await import('../../scripts/agy-agent-runner.mjs');
+  const prompt = buildAgyPrompt({ task: 'hey there!', isConversation: true, tuning: 'Warm and playful.' });
+  expect(prompt).toContain('Warm and playful.');
+  expect(prompt).toContain('Do NOT call any tools');
+  expect(prompt).not.toContain('waymark_create_sheet');
+});
+
+test('resolveOAuthTokenPath honors explicit override and env var precedence', async () => {
+  const { resolveOAuthTokenPath } = await import('../../scripts/agy-agent-runner.mjs');
+  const tmpA = path.join(ROOT, 'tests', 'fixtures', 'tmp-oauth-a.json');
+  const tmpB = path.join(ROOT, 'tests', 'fixtures', 'tmp-oauth-b.json');
+  fs.writeFileSync(tmpA, JSON.stringify({ account_email: 'a@example.com', access_token: 'x' }));
+  fs.writeFileSync(tmpB, JSON.stringify({ account_email: 'b@example.com', access_token: 'y' }));
+  try {
+    // Explicit caller override wins over everything.
+    expect(resolveOAuthTokenPath({ tokenPath: tmpA, env: { WAYMARK_OAUTH_TOKEN_PATH: tmpB } })).toBe(tmpA);
+    // Otherwise the exported env var is used — two concurrent tasks stay isolated.
+    expect(resolveOAuthTokenPath({ env: { WAYMARK_OAUTH_TOKEN_PATH: tmpB } })).toBe(tmpB);
+  } finally {
+    fs.rmSync(tmpA, { force: true });
+    fs.rmSync(tmpB, { force: true });
+  }
+});
+
+test('SheetWebRtcPeer.sendDataToPeer delivers only to the targeted peer', async () => {
+  const { SheetWebRtcPeer } = await import('../../mcp/sheet-webrtc-peer.mjs');
+  const peer = new SheetWebRtcPeer({ sheetId: 'x', peerId: 'ai-abc', tabName: 'WebRTC_Signaling', blockStart: 2, initiatorRule: 'peerId' });
+  const sentA = [];
+  const sentB = [];
+  peer._pcs.set('peer-A', { connected: true, dc: { readyState: 'open', send: (m) => sentA.push(JSON.parse(m)) }, pc: { close() {} } });
+  peer._pcs.set('peer-B', { connected: true, dc: { readyState: 'open', send: (m) => sentB.push(JSON.parse(m)) }, pc: { close() {} } });
+
+  const ok = peer.sendDataToPeer('peer-A', { type: 'agent-tuning-ack', requestId: 'r1' });
+  expect(ok).toBe(true);
+  expect(sentA.length).toBe(1);
+  expect(sentA[0].type).toBe('agent-tuning-ack');
+  expect(sentB.length).toBe(0);
+
+  // Unknown / closed peer returns false and delivers nothing.
+  expect(peer.sendDataToPeer('peer-missing', { type: 'x' })).toBe(false);
+  peer.destroy();
+});
+
+test('SheetWebRtcPeer keeps _connected true when one of several peers drops', async () => {
+  const { SheetWebRtcPeer } = await import('../../mcp/sheet-webrtc-peer.mjs');
+  const peer = new SheetWebRtcPeer({ sheetId: 'x', peerId: 'ai-abc', tabName: 'WebRTC_Signaling', blockStart: 2, initiatorRule: 'peerId' });
+  peer._pcs.set('peer-A', { connected: true, dc: { readyState: 'open', send() {} }, pc: { close() {} } });
+  peer._pcs.set('peer-B', { connected: true, dc: { readyState: 'open', send() {} }, pc: { close() {} } });
+  peer._remotePeerId = 'peer-A';
+  peer._connected = true;
+  // Peer A drops — primary refs must repoint to still-open peer B, not blank out.
+  peer._pcs.get('peer-A').connected = false;
+  peer._pcs.get('peer-A').dc.readyState = 'closed';
+  peer._repointPrimaryPeer();
+  expect(peer._connected).toBe(true);
+  expect(peer._remotePeerId).toBe('peer-B');
+  peer.destroy();
 });

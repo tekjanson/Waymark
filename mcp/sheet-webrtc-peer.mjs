@@ -319,6 +319,40 @@ export class SheetWebRtcPeer {
         if (chosen === -1) throw new Error('no free signaling slot');
         this.block = chosen;
         await this._writePresence();
+
+        // Post-write verification: a peer that started at the same instant may
+        // have claimed the same slot. Re-read after a short jittered delay and,
+        // if someone else now owns our row, relocate to a different free slot.
+        for (let attempt = 0; attempt < 3; attempt++) {
+            await new Promise(r => setTimeout(r, 250 + (this._peerIdJitter?.() % 200 || 0)));
+            let verifyRows = [];
+            try { verifyRows = (await this._readRange(range)).values || []; } catch { break; }
+            let owner = null;
+            try { owner = JSON.parse(verifyRows[this.block - 1]?.[0] || 'null'); } catch {}
+            if (owner?.peerId === this.peerId) break; // we own it — done
+            if (!owner?.peerId || Date.now() - (owner.ts || 0) > ALIVE_TTL) {
+                await this._writePresence().catch(() => {});
+                continue;
+            }
+            // Someone else owns our row — find another free slot and reclaim.
+            let next = -1;
+            for (let i = 0; i < MAX_SLOTS; i++) {
+                const slotRow = this.blockStart + i * BLOCK_SIZE;
+                if (slotRow === this.block) continue;
+                const cell = verifyRows[slotRow - 1]?.[0];
+                if (!cell) { next = slotRow; break; }
+                try {
+                    const obj = JSON.parse(cell);
+                    if (!obj.peerId || obj.peerId === this.peerId || Date.now() - (obj.ts || 0) > ALIVE_TTL) {
+                        next = slotRow; break;
+                    }
+                } catch { next = slotRow; break; }
+            }
+            if (next === -1) throw new Error('no free signaling slot after collision');
+            this._diag.counters.slotCollisions = (this._diag.counters.slotCollisions || 0) + 1;
+            this.block = next;
+            await this._writePresence();
+        }
         console.log(`[SheetWebRtcPeer] joined mesh at ${this.tabName}!T${this.block} peer=${this.peerId}`);
         this._diagEvent('mesh-joined', { block: this.block, peerId: this.peerId });
 
@@ -442,6 +476,46 @@ export class SheetWebRtcPeer {
             }
         }
 
+        // Slot-collision guard: if another ALIVE peer overwrote our presence
+        // slot (two peers started simultaneously and claimed the same block),
+        // relocate to a free slot and re-announce before negotiating anything —
+        // otherwise both peers keep corrupting the same offer/answer cells.
+        {
+            const mineRaw = rows[this.block - 1]?.[0];
+            let collided = false;
+            if (mineRaw) {
+                try {
+                    const mine = JSON.parse(mineRaw);
+                    collided = Boolean(mine?.peerId) && mine.peerId !== this.peerId
+                        && (Date.now() - (mine.ts || 0) <= ALIVE_TTL);
+                } catch {}
+            }
+            if (collided) {
+                const taken = new Set([...aliveById.values()].map(v => v.block));
+                let newBlock = -1;
+                for (let i = 0; i < MAX_SLOTS; i++) {
+                    const slotRow = this.blockStart + i * BLOCK_SIZE;
+                    if (slotRow === this.block || taken.has(slotRow)) continue;
+                    const cell = rows[slotRow - 1]?.[0];
+                    if (!cell) { newBlock = slotRow; break; }
+                    try {
+                        const obj = JSON.parse(cell);
+                        if (!obj.peerId || obj.peerId === this.peerId || Date.now() - (obj.ts || 0) > ALIVE_TTL) {
+                            newBlock = slotRow; break;
+                        }
+                    } catch { newBlock = slotRow; break; }
+                }
+                if (newBlock > 0) {
+                    console.log(`[poll] slot collision at T${this.block} (taken by another peer) — relocating to T${newBlock}`);
+                    this._diag.counters.slotCollisions = (this._diag.counters.slotCollisions || 0) + 1;
+                    this._diagEvent('slot-collision', { from: this.block, to: newBlock });
+                    this.block = newBlock;
+                    await this._writePresence().catch(() => {});
+                    return; // re-read with our new slot on the next tick
+                }
+            }
+        }
+
         // 1) Drop local connection objects for peers no longer alive.
         for (const [peerId, entry] of this._pcs) {
             if (!aliveById.has(peerId)) {
@@ -450,9 +524,7 @@ export class SheetWebRtcPeer {
                 this._lastPong.delete(peerId);
                 this._remoteNonces.delete(peerId);
                 if (this._remotePeerId === peerId) {
-                    this._remotePeerId = null;
-                    this._dc = null;
-                    this._connected = false;
+                    this._repointPrimaryPeer();
                 }
             }
         }
@@ -533,8 +605,34 @@ export class SheetWebRtcPeer {
             }
             // For in-progress states, DO NOT clear myAnswers/myOffers yet.
             // Clearing early can delete the answer before the initiator reads it.
+            // EXCEPTION: if we are the answerer and the remote browser has written
+            // a NEWER offer than the one we answered (e.g. it reloaded or its slot
+            // was overwritten), supersede the stale PC immediately and build a
+            // fresh answer this same tick — never wait 30s for HANDSHAKE_TIMEOUT.
             if (entry?.state === 'answer-applied' || entry?.state === 'answering') {
-                continue;
+                let supersede = false;
+                if (!this._shouldInitiateHandshake(remotePeerId, remoteBlock)) {
+                    let remoteOffers = {};
+                    try { remoteOffers = JSON.parse(rows[remoteBlock]?.[0] || '{}'); } catch {}
+                    const latestOffer = remoteOffers[this.peerId];
+                    if (latestOffer?.sdp) {
+                        const newerTs = (latestOffer.ts || 0) > (entry.offerTs || 0);
+                        const changedSdp = entry.lastOfferSdp && latestOffer.sdp !== entry.lastOfferSdp;
+                        if (newerTs || changedSdp) supersede = true;
+                    }
+                }
+                if (supersede) {
+                    console.log(`[poll] newer offer from ${remotePeerId} — superseding stale ${entry.state} PC`);
+                    this._diag.counters.staleOfferSupersedes = (this._diag.counters.staleOfferSupersedes || 0) + 1;
+                    this._diagEvent('offer-supersede', { remotePeerId, state: entry.state });
+                    try { entry.pc.close(); } catch {}
+                    this._pcs.delete(remotePeerId);
+                    this._lastPong.delete(remotePeerId);
+                    if (myAnswers[remotePeerId]) { delete myAnswers[remotePeerId]; ansDirty = true; }
+                    entry = undefined;
+                } else {
+                    continue;
+                }
             }
             // Legacy: entry exists but uses old boolean connected flag
             if (entry?.connected) {
@@ -628,7 +726,7 @@ export class SheetWebRtcPeer {
                         this._diag.counters.answersBuilt += 1;
                         const pd = this._diagPeer(remotePeerId);
                         if (pd) pd.answerAttempts += 1;
-                        const answerSdp = await this._buildAnswer(remotePeerId, offer.sdp); // sets state='answering'
+                        const answerSdp = await this._buildAnswer(remotePeerId, offer.sdp, offer.ts || Date.now()); // sets state='answering'
                         if (answerSdp) {
                             const pd2 = this._diagPeer(remotePeerId);
                             if (pd2) pd2.answerSuccess += 1;
@@ -696,9 +794,9 @@ export class SheetWebRtcPeer {
     /**
      * Accept a remote offer and build an answer using vanilla ICE.
      */
-    async _buildAnswer(remotePeerId, offerSdp) {
+    async _buildAnswer(remotePeerId, offerSdp, offerTs = 0) {
         const pc = new RTCPeerConnection({ iceServers: STUN_SERVERS });
-        this._pcs.set(remotePeerId, { pc, dc: null, connected: false, state: 'answering', startedAt: Date.now() });
+        this._pcs.set(remotePeerId, { pc, dc: null, connected: false, state: 'answering', startedAt: Date.now(), offerTs: offerTs || Date.now(), lastOfferSdp: offerSdp });
         this._attachPcHandlers(pc, remotePeerId);
 
         pc.ondatachannel = ({ channel }) => {
@@ -755,9 +853,7 @@ export class SheetWebRtcPeer {
             this._pcs.delete(remotePeerId);
             this._lastPong.delete(remotePeerId);
             if (this._remotePeerId === remotePeerId) {
-                this._remotePeerId = null;
-                this._dc = null;
-                this._connected = false;
+                this._repointPrimaryPeer();
             }
         };
 
@@ -840,10 +936,10 @@ export class SheetWebRtcPeer {
             const pd = this._diagPeer(remotePeerId);
             if (pd) { pd.dcClose += 1; pd.lastState = 'dc:closed'; }
             this._diagEvent('dc-close', { remotePeerId });
-            // Update backward-compat refs
+            // Update backward-compat refs — repoint to another live peer instead
+            // of blanking state, so a 2nd peer staying connected is not lost.
             if (this._remotePeerId === remotePeerId) {
-                this._connected = false;
-                this._dc = null;
+                this._repointPrimaryPeer();
             }
         };
     }
@@ -872,7 +968,7 @@ export class SheetWebRtcPeer {
                 try { entry.pc.close(); } catch {}
                 this._pcs.delete(remotePeerId);
                 this._lastPong.delete(remotePeerId);
-                if (this._remotePeerId === remotePeerId) { this._connected = false; this._dc = null; }
+                if (this._remotePeerId === remotePeerId) { this._repointPrimaryPeer(); }
             }
         }
     }
@@ -886,18 +982,49 @@ export class SheetWebRtcPeer {
             .map(([id]) => id);
     }
 
+    /**
+     * Recompute the single-peer backward-compat refs after a peer drops. When
+     * one of several connected peers closes, we must NOT blank out _connected /
+     * _dc — we repoint them to the next still-open peer so the mesh keeps working.
+     */
+    _repointPrimaryPeer() {
+        for (const [id, entry] of this._pcs) {
+            if (entry.connected && entry.dc && entry.dc.readyState === 'open') {
+                this._remotePeerId = id;
+                this._dc = entry.dc;
+                this._connected = true;
+                return;
+            }
+        }
+        this._remotePeerId = null;
+        this._dc = null;
+        this._connected = false;
+    }
+
     /** Send a notification to one connected remote peer. */
     sendToPeer(remotePeerId, { title, body } = {}) {
+        return this.sendDataToPeer(remotePeerId, {
+            type:  'orchestrator-alert',
+            title: title || 'Waymark',
+            body:  body  || '',
+        });
+    }
+
+    /**
+     * Send an arbitrary payload to exactly ONE connected remote peer's
+     * DataChannel (never broadcast). Returns false if that peer is not open.
+     * @param {string} remotePeerId
+     * @param {object|string} payload
+     * @returns {boolean}
+     */
+    sendDataToPeer(remotePeerId, payload) {
         this._diag.counters.targetedCalls += 1;
         if (!remotePeerId) return false;
         const entry = this._pcs.get(remotePeerId);
         if (!entry?.dc || entry.dc.readyState !== 'open') return false;
-        const json = JSON.stringify({
-            type:  'orchestrator-alert',
-            title: title || 'Waymark',
-            body:  body  || '',
-            ts:    Date.now(),
-        });
+        const json = typeof payload === 'string'
+            ? payload
+            : JSON.stringify({ ...payload, ts: payload?.ts ?? Date.now() });
         try {
             entry.dc.send(json);
             this._diag.counters.targetedDelivered += 1;

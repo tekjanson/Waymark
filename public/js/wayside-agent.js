@@ -7,6 +7,7 @@ import { el, showToast, copyToClipboard } from './ui.js';
 import { api } from './api-client.js';
 import * as userData from './user-data.js';
 import * as collab from './collab.js';
+import { getWaysideAgentTuning, setWaysideAgentTuning } from './storage.js';
 import { detectTemplate } from './templates/index.js';
 
 function deriveAgentThreadTitle(text) {
@@ -570,8 +571,57 @@ async function openShareAgentModal(host, ctx = {}) {
 
   const closeModal = () => {
     cleanupAckListener();
+    cleanupTuningAck();
     modal.remove();
   };
+
+  // ── Agent personality & tuning ──
+  const tuningInput = el('textarea', {
+    id: 'wayside-agent-tuning-input',
+    className: 'input',
+    rows: 3,
+    placeholder: "Custom instructions, tone, household facts, or workflow rules (e.g., 'Be concise, witty, and always include protein macros on meal sheets')…",
+  });
+  tuningInput.value = getWaysideAgentTuning();
+  const tuningStatusEl = el('div', { id: 'wayside-tuning-status', className: 'wayside-oauth-tunnel-status' }, [
+    'Saved tuning is applied to every reply from your Waymark AI agent.',
+  ]);
+  let tuningAckHandler = null;
+  const cleanupTuningAck = () => {
+    if (tuningAckHandler) {
+      document.removeEventListener('waymark:agent-tuning-ack', tuningAckHandler);
+      tuningAckHandler = null;
+    }
+  };
+  const saveTuningBtn = el('button', {
+    id: 'wayside-save-tuning-btn',
+    type: 'button',
+    className: 'btn btn-secondary',
+    on: {
+      click: () => {
+        const tuning = String(tuningInput.value || '').trim();
+        setWaysideAgentTuning(tuning);
+        const requestId = `tuning-${Date.now().toString(36)}`;
+        cleanupTuningAck();
+        tuningAckHandler = (e) => {
+          const detail = e.detail || {};
+          if (detail.requestId && detail.requestId !== requestId) return;
+          cleanupTuningAck();
+          tuningStatusEl.className = 'wayside-oauth-tunnel-status is-success';
+          tuningStatusEl.textContent = '✓ Agent acknowledged and applied your tuning over the P2P tunnel.';
+        };
+        document.addEventListener('waymark:agent-tuning-ack', tuningAckHandler);
+        const widget = ctx.getWidget ? ctx.getWidget() : null;
+        if (widget?.session) {
+          if (!widget.session.sheetId && sheetId) {
+            widget.setSignaling(sheetId, collab.createLedgerSignal(sheetId));
+          }
+          widget.session.send('', 'agent-tuning-update', { requestId, sender: me, tuning });
+        }
+        showToast('Agent tuning saved!', 'success');
+      },
+    },
+  }, ['💾 Save Tuning to Agent']);
 
   const modal = el('div', {
     id: 'wayside-share-agent-modal',
@@ -605,6 +655,18 @@ async function openShareAgentModal(host, ctx = {}) {
           hostSelect,
           el('label', { className: 'form-label', htmlFor: 'wayside-connect-agent-input' }, ['Connect Shared Agent by Invite Link or Sheet ID']),
           el('div', { className: 'wayside-share-link-row' }, [connectInput, connectBtn]),
+        ]),
+        el('div', { className: 'wayside-agent-section' }, [
+          el('div', { className: 'wayside-agent-section-title' }, [
+            el('span', {}, ['🎛️ Agent Personality & Tuning']),
+          ]),
+          el('p', { className: 'wayside-agent-section-desc' }, [
+            'Give your Waymark AI a voice, tone, and custom rules. This tuning is applied to every reply — conversational and task — and is pushed to the connected agent over the P2P tunnel.',
+          ]),
+          el('label', { className: 'form-label', htmlFor: 'wayside-agent-tuning-input' }, ['Custom Instructions & Personality']),
+          tuningInput,
+          el('div', { className: 'modal-actions' }, [saveTuningBtn]),
+          tuningStatusEl,
         ]),
         el('div', { className: 'wayside-agent-section' }, [
           el('div', { className: 'wayside-agent-section-title' }, [

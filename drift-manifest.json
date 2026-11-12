@@ -221,6 +221,7 @@
         "tests/**",
         "node_modules/**",
         "public/js/vendor/**",
+        "p2p-server/**",
         "scripts/**",
         "dev-worker/**"
       ],

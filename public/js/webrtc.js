@@ -45,6 +45,7 @@ const POLL_MS   = 5000;  // Poll interval (5s to stay within Sheets rate limits)
 const HEART_MS  = 15000; // Heartbeat interval (15s reduces write pressure)
 const ALIVE_TTL = 50000; // Peer gone after 50s silence (>3× heartbeat)
 const ICE_WAIT  = 2000;  // ICE gathering timeout
+const HANDSHAKE_TIMEOUT_MS = 20000; // Rebuild a half-open handshake stuck this long
 
 /* ---------- Handshake encryption ---------- */
 
@@ -760,7 +761,7 @@ export class WaymarkConnect {
         this.onMessage({ peerId: d.peerId, name: d.name, text: d.text, ts: d.ts, messageId: d.messageId, channel: 'local' });
         break;
       case 'typing':
-        this.onMessage({ peerId: d.peerId, name: d.name, text: null, type: 'typing', ts: d.ts, channel: 'local' });
+        this.onMessage({ peerId: d.peerId, name: d.name, text: null, type: 'typing', statusText: d.statusText || '', previewText: d.previewText || '', threadId: d.threadId, ts: d.ts, channel: 'local' });
         break;
       case 'call-start':
         this._peers.set(d.peerId, { ...this._peers.get(d.peerId), name: d.name || 'Peer', channel: this._rtc.get(d.peerId)?.dc?.readyState === 'open' ? 'rtc' : 'local', inCall: true });
@@ -782,6 +783,8 @@ export class WaymarkConnect {
         break;
       case 'agent-oauth-setup':
       case 'agent-oauth-ack':
+      case 'agent-tuning-update':
+      case 'agent-tuning-ack':
         if (typeof document !== 'undefined') {
           document.dispatchEvent(new CustomEvent(`waymark:${d.type}`, { detail: d }));
         }
@@ -1069,6 +1072,17 @@ export class WaymarkConnect {
           continue;
         }
 
+        // Stuck handshake: a half-open connection whose DataChannel never opened
+        // (missed offer/answer during a simultaneous join or slot race). Rebuild
+        // it instead of staying on "Pairing…" forever until a page refresh.
+        if (r && r.dc?.readyState !== 'open' && r.startedAt && Date.now() - r.startedAt > HANDSHAKE_TIMEOUT_MS) {
+          console.warn(`[WC] _poll — handshake with ${remote.peerId} stuck ${Math.round((Date.now() - r.startedAt) / 1000)}s — rebuilding`);
+          this._closeOne(remote.peerId);
+          if (myOffers[remote.peerId])  { delete myOffers[remote.peerId];  offDirty = true; }
+          if (myAnswers[remote.peerId]) { delete myAnswers[remote.peerId]; ansDirty = true; }
+          continue;
+        }
+
         // Already connected — clean signal entries
         if (r?.dc?.readyState === 'open') {
           if (myOffers[remote.peerId])  { delete myOffers[remote.peerId];  offDirty = true; }
@@ -1174,6 +1188,7 @@ export class WaymarkConnect {
       pc,
       dc,
       state: 'offering',
+      startedAt: Date.now(),
       makingInitial: true,
       makingOffer: false,
       ignoreOffer: false,
@@ -1206,6 +1221,7 @@ export class WaymarkConnect {
       pc,
       dc: null,
       state: 'answering',
+      startedAt: Date.now(),
       makingInitial: true,
       makingOffer: false,
       ignoreOffer: false,
@@ -1410,7 +1426,7 @@ export class WaymarkConnect {
             this.onCallEnded(m.peerId);
             break;
           case 'typing':
-            this.onMessage({ peerId: m.peerId, name: m.name, text: null, type: 'typing', ts: m.ts, channel: 'rtc' });
+            this.onMessage({ peerId: m.peerId, name: m.name, text: null, type: 'typing', statusText: m.statusText || '', previewText: m.previewText || '', threadId: m.threadId, ts: m.ts, channel: 'rtc' });
             break;
           case 'renego-offer':
             this._onRenegoOffer(remotePeerId, m);
@@ -1431,6 +1447,8 @@ export class WaymarkConnect {
             break;
           case 'agent-oauth-setup':
           case 'agent-oauth-ack':
+          case 'agent-tuning-update':
+          case 'agent-tuning-ack':
             if (typeof document !== 'undefined') {
               document.dispatchEvent(new CustomEvent(`waymark:${m.type}`, { detail: { ...m, remotePeerId } }));
             }

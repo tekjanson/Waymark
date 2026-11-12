@@ -219,6 +219,10 @@ export class SocialSession {
           document.dispatchEvent(new CustomEvent('waymark:agent-oauth-ack', { detail: msg }));
           return;
         }
+        if (msg.type === 'agent-tuning-ack' && typeof document !== 'undefined') {
+          document.dispatchEvent(new CustomEvent('waymark:agent-tuning-ack', { detail: msg }));
+          return;
+        }
         if (msg.type === 'agent-p2p-ensure-sheet' && typeof document !== 'undefined') {
           document.dispatchEvent(new CustomEvent('waymark:agent-p2p-ensure-sheet', {
             detail: { ...msg, session: this },
@@ -226,7 +230,7 @@ export class SocialSession {
           return;
         }
         if (msg.type === 'typing' && !msg.text) {
-          this.onTyping(msg.name || 'Collaborator');
+          this.onTyping(msg.name || 'Collaborator', msg.statusText || '');
           return;
         }
         if (!msg.text) return;

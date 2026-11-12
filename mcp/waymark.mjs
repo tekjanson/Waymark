@@ -245,13 +245,39 @@ async function loadTokenFromPath(tokenPath) {
 
 /**
  * Get an OAuth access token for the human user (for sheet creation).
- * Checks active requester token first (if set by WaysideOrchestrator), then
- * WAYMARK_OAUTH_TOKEN_PATH, refreshing if expired.
- * Returns null if the token file is missing — caller falls back to SA.
+ *
+ * Deterministic per-process precedence so two concurrent agy tasks (two people
+ * driving the agent at once) never authenticate as each other:
+ *   1. WAYMARK_ACTIVE_REQUESTER_FILE — a task-scoped pointer file written by the
+ *      runner for THIS process (immune to the global file being overwritten).
+ *   2. WAYMARK_OAUTH_TOKEN_PATH — an explicit per-process token path.
+ *   3. waymark-active-requester.json — the legacy global pointer (fallback only).
+ *   4. the owner's default token.
+ * Returns null if no token file is usable — caller falls back to SA.
  */
 async function getUserOAuthToken() {
   const gcloudDir = path.join(os.homedir(), ".config", "gcloud");
-  if (!process.env.WAYMARK_OAUTH_TOKEN_PATH) {
+
+  // 1. Task-scoped requester pointer for THIS process.
+  if (process.env.WAYMARK_ACTIVE_REQUESTER_FILE) {
+    try {
+      const scopedPath = process.env.WAYMARK_ACTIVE_REQUESTER_FILE;
+      if (existsSync(scopedPath)) {
+        const scopedMeta = JSON.parse(readFileSync(scopedPath, "utf8"));
+        if (scopedMeta?.tokenPath && existsSync(scopedMeta.tokenPath)) {
+          const scopedToken = await loadTokenFromPath(scopedMeta.tokenPath);
+          if (scopedToken) return scopedToken;
+        }
+      }
+    } catch {}
+  }
+
+  // 2. Explicit per-process token path.
+  if (process.env.WAYMARK_OAUTH_TOKEN_PATH) {
+    const token = await loadTokenFromPath(process.env.WAYMARK_OAUTH_TOKEN_PATH);
+    if (token) return token;
+  } else {
+    // 3. Legacy global pointer (only when no per-process override exists).
     try {
       const activePath = path.join(gcloudDir, "waymark-active-requester.json");
       if (existsSync(activePath)) {
@@ -268,8 +294,8 @@ async function getUserOAuthToken() {
     } catch {}
   }
 
-  const defaultPath = process.env.WAYMARK_OAUTH_TOKEN_PATH ||
-    path.join(gcloudDir, "waymark-oauth-token.json");
+  // 4. Owner default.
+  const defaultPath = path.join(gcloudDir, "waymark-oauth-token.json");
   return loadTokenFromPath(defaultPath);
 }
 
