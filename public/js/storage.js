@@ -346,6 +346,15 @@ function setAgentModel(model) {
   else remove('agent_model');
 }
 
+/* ---------- Wayside agent tuning (personality / custom instructions) ---------- */
+function getWaysideAgentTuning() {
+  return get('wayside_agent_tuning') || '';
+}
+function setWaysideAgentTuning(tuning) {
+  if (tuning) set('wayside_agent_tuning', tuning);
+  else remove('wayside_agent_tuning');
+}
+
 /* ---------- Provider selection ---------- */
 function getAgentProvider() {
   return get('agent_provider') || 'gemini';
@@ -983,6 +992,8 @@ export {
   resetDailyKeyCounters,
   getAgentModel,
   setAgentModel,
+  getWaysideAgentTuning,
+  setWaysideAgentTuning,
   getAgentProvider,
   setAgentProvider,
   getClaudeKeys,

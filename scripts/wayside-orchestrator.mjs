@@ -48,6 +48,9 @@ const PRESENCE_TAB = 'Presence';
 const SIGNALING_TAB = 'WebRTC_Signaling';
 const POLL_INTERVAL_MS = parseInt(process.env.WAYSIDE_POLL_INTERVAL_MS || '4000', 10);
 const PRESENCE_INTERVAL_MS = parseInt(process.env.WAYSIDE_PRESENCE_INTERVAL_MS || '30000', 10);
+const MAX_CONV_TURNS = parseInt(process.env.WAYSIDE_MAX_CONV_TURNS || '20', 10);
+const MAX_TURN_CHARS = parseInt(process.env.WAYSIDE_MAX_TURN_CHARS || '1200', 10);
+const CONVERSATIONS_FILE = path.join(ROOT, '.waymark', 'orchestrator-conversations.json');
 
 const CATALOG_PATH = path.join(ROOT, 'generated', 'waymark-agent-catalog.json');
 let CATALOG = { templates: [], keywordRoutes: [], fallbackAgent: 'waymark-builder' };
@@ -463,9 +466,26 @@ export async function discoverOrCreateWaysideLedger(opts = {}) {
 /* ---------- Intent & Template Routing ---------- */
 
 /**
+ * Match a keyword against text on word boundaries (singular/plural aware).
+ * Prevents substring collisions like "wayboard" matching kanban's "board",
+ * "ai-router" matching travel's "route", or "dialog" matching log's "log".
+ * @param {string} text — lowercased haystack
+ * @param {string} kw — lowercased keyword (may contain spaces)
+ * @returns {boolean}
+ */
+function matchesKeyword(text, kw) {
+  const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pluralOpt = kw.endsWith('s')
+    ? `(?:${escaped}|${escaped.slice(0, -1)})`
+    : `${escaped}s?`;
+  const re = new RegExp(`(?:^|[^a-z0-9])${pluralOpt}(?:$|[^a-z0-9])`, 'i');
+  return re.test(text);
+}
+
+/**
  * Classify a user message into a template or conversational intent.
  * @param {string} text
- * @returns {{ templateKey: string|null, templateName: string|null, isHelp: boolean, isConversation: boolean }}
+ * @returns {{ templateKey: string|null, templateName: string|null, isHelp: boolean, isConversation: boolean, isCodeTask: boolean, candidateTemplates: Array<{ key: string, name: string }> }}
  */
 export function classifyMessage(text) {
   const clean = (text || '').toLowerCase().trim();
@@ -479,16 +499,25 @@ export function classifyMessage(text) {
         isHelp: false,
         isConversation: false,
         isCodeTask: false,
+        candidateTemplates: [{ key: tmpl.key, name: tmpl.name }],
       };
     }
   }
 
-  // 2. Check code/engineering intent (git branch, PR, code edits, repository tasks)
-  const isCodeTask = /\b(pull\s*request|pr)\b/i.test(clean) ||
-    /\b(branch|checkout|commit|merge\s*request)\b/i.test(clean) ||
-    /\b(in\s+the\s+(?:waymark\s+)?repo|codebase|repository)\b/i.test(clean) ||
-    /\b(put\s+up\s+(?:a\s+)?(?:new\s+)?(?:waymark\s+)?branch|put\s+up\s+for\s+pr|make\s+(?:a\s+)?pr)\b/i.test(clean) ||
-    (/\b(feature|bugfix|patch|refactor|update|change|add|fix)\b/i.test(clean) && /\b(code|frontend|backend|ui|component|server|script|wayboard)\b/i.test(clean));
+  // 2. Check code/engineering intent. Require EXPLICIT repository / git / PR
+  // intent so a Waymark sheet request ("add a card to my kanban to fix the
+  // wayboard ui") is never hijacked into a 45-minute background Git PR task.
+  const explicitCodeIntent = /\b(pull\s*request|pr)\b/i.test(clean) ||
+    /\b(new\s+branch|waymark\s+branch|feature\s+branch|git\s+checkout|checkout\s+-b|commit|merge\s*request)\b/i.test(clean) ||
+    /\b(in\s+the\s+(?:waymark\s+)?repo(?:sitory)?|in\s+the\s+codebase)\b/i.test(clean) ||
+    /\b(put\s+up\s+(?:a\s+)?(?:new\s+)?(?:waymark\s+)?branch|put\s+up\s+for\s+pr|make\s+(?:a\s+)?pr|open\s+(?:a\s+)?pr)\b/i.test(clean) ||
+    /(^|\s)(@waymark-builder|\/code)\b/i.test(clean);
+  // Generic "change the code" style intent only counts when the user is clearly
+  // talking about source code, NOT a spreadsheet/board/template.
+  const sheetyContext = /\b(kanban|checklist|task|card|row|sheet|spreadsheet|board|backlog|bug\s*tracker|template|budget|recipe|meal|itinerary|roster|habit|tracker|inventory|crm|grade|timesheet)\b/i.test(clean);
+  const genericCodeIntent = /\b(feature|bugfix|patch|refactor|implement)\b/i.test(clean) &&
+    /\b(code|frontend|backend|component|server|script|wayboard|module|endpoint)\b/i.test(clean);
+  const isCodeTask = explicitCodeIntent || (genericCodeIntent && !sheetyContext);
 
   if (isCodeTask) {
     return {
@@ -497,6 +526,7 @@ export function classifyMessage(text) {
       isHelp: false,
       isConversation: false,
       isCodeTask: true,
+      candidateTemplates: [],
     };
   }
 
@@ -528,66 +558,58 @@ export function classifyMessage(text) {
       isHelp: Boolean(isHelpQuery),
       isConversation: true,
       isCodeTask: false,
+      candidateTemplates: [],
     };
   }
 
-  // 4. Check keywordRoutes (with fuzzy / plural / singular support)
-  let bestRoute = null;
-  let maxMatches = 0;
+  // 4. Score keywordRoutes (word-boundary, plural/singular aware) and keep the
+  // top candidates so a multi-domain request can inform the agent prompt.
+  const routeScores = [];
   for (const route of CATALOG.keywordRoutes || []) {
     let matches = 0;
     for (const rawKw of route.keywords || []) {
-      const kw = rawKw.toLowerCase();
-      // Match exact substring
-      if (clean.includes(kw)) {
-        matches += 2;
-      } else if (kw.endsWith('s') && clean.includes(kw.slice(0, -1))) {
-        // e.g. "expenses" -> match "expense"
-        matches += 2;
-      } else if (!kw.endsWith('s') && clean.includes(`${kw}s`)) {
-        // e.g. "deal" -> match "deals"
-        matches += 2;
-      }
+      if (matchesKeyword(clean, rawKw.toLowerCase())) matches += 2;
     }
-    if (matches > maxMatches) {
-      maxMatches = matches;
-      bestRoute = route;
+    if (matches > 0) {
+      const key = route.agent.replace(/^waymark-/, '');
+      const tmpl = (CATALOG.templates || []).find(t => t.key === key);
+      routeScores.push({ key, name: tmpl ? tmpl.name : key, score: matches });
     }
   }
+  routeScores.sort((a, b) => b.score - a.score);
 
-  if (bestRoute && maxMatches > 0) {
-    const key = bestRoute.agent.replace(/^waymark-/, '');
-    const tmpl = (CATALOG.templates || []).find(t => t.key === key);
+  if (routeScores.length > 0) {
+    const candidateTemplates = routeScores.slice(0, 3).map(r => ({ key: r.key, name: r.name }));
     return {
-      templateKey: key,
-      templateName: tmpl ? tmpl.name : key,
+      templateKey: routeScores[0].key,
+      templateName: routeScores[0].name,
       isHelp: false,
       isConversation: false,
       isCodeTask: false,
+      candidateTemplates,
     };
   }
 
-  // 5. Check template detectSignals
-  let bestTmpl = null;
-  let maxSignals = 0;
+  // 5. Score template detectSignals (word-boundary aware)
+  const signalScores = [];
   for (const tmpl of CATALOG.templates || []) {
     let signals = 0;
     for (const sig of tmpl.detectSignals || []) {
-      if (clean.includes(sig.toLowerCase())) signals++;
+      if (matchesKeyword(clean, sig.toLowerCase())) signals++;
     }
-    if (signals > maxSignals) {
-      maxSignals = signals;
-      bestTmpl = tmpl;
-    }
+    if (signals > 0) signalScores.push({ key: tmpl.key, name: tmpl.name, score: signals });
   }
+  signalScores.sort((a, b) => b.score - a.score);
 
-  if (bestTmpl && maxSignals >= 2) {
+  if (signalScores.length > 0 && signalScores[0].score >= 2) {
+    const candidateTemplates = signalScores.slice(0, 3).map(s => ({ key: s.key, name: s.name }));
     return {
-      templateKey: bestTmpl.key,
-      templateName: bestTmpl.name,
+      templateKey: signalScores[0].key,
+      templateName: signalScores[0].name,
       isHelp: false,
       isConversation: false,
       isCodeTask: false,
+      candidateTemplates,
     };
   }
 
@@ -597,6 +619,7 @@ export function classifyMessage(text) {
     isHelp: false,
     isConversation: false,
     isCodeTask: false,
+    candidateTemplates: [],
   };
 }
 
@@ -916,7 +939,184 @@ export class WaysideOrchestrator {
     this.pollTimer = null;
     this.presenceTimer = null;
     this.running = false;
-    this._processingQueue = Promise.resolve();
+
+    // Per-conversation serialization + a bounded global concurrency limiter so
+    // two people (or two threads) messaging at once never block each other, yet
+    // the host is not overwhelmed by unbounded parallel agy subprocesses.
+    this._convQueues = new Map();
+    this._inflight = new Set();
+    this.maxConcurrentAgy = opts.maxConcurrentAgy || Number(process.env.WAYSIDE_MAX_CONCURRENT_AGY) || 2;
+    this._agyActive = 0;
+    this._agyWaiters = [];
+
+    // Live agent tuning (personality / model) sourced from the browser P2P
+    // 'agent-tuning-update' control message or the Agent Registry sheet.
+    this.agentTuning = process.env.WAYSIDE_AGENT_TUNING || process.env.AGENT_TUNING || '';
+    this.agentModelOverride = process.env.AGY_MODEL || '';
+    this.agentsSheetId = opts.agentsSheetId || process.env.AGENTS_SHEET_ID || '';
+    this._lastTuningFetchMs = 0;
+
+    // Durable per-thread sheet/doc registry so the agent remembers which
+    // Waymarks belong to a thread across daemon restarts.
+    this._diskRegistry = new Map();
+  }
+
+  /* ---------- Concurrency: bounded agy slots ---------- */
+
+  async _acquireAgySlot() {
+    if (this._agyActive < this.maxConcurrentAgy) {
+      this._agyActive += 1;
+      return;
+    }
+    await new Promise((resolve) => this._agyWaiters.push(resolve));
+  }
+
+  _releaseAgySlot() {
+    const next = this._agyWaiters.shift();
+    if (next) {
+      next();
+    } else {
+      this._agyActive = Math.max(0, this._agyActive - 1);
+    }
+  }
+
+  /** Await every per-conversation queue to settle (cron / single-pass friendly). */
+  async _drainQueues() {
+    while (this._inflight.size > 0) {
+      await Promise.allSettled([...this._inflight]);
+    }
+  }
+
+  /* ---------- Conversation memory ---------- */
+
+  /**
+   * Append a turn to a conversation, bounded to MAX_CONV_TURNS turns and
+   * MAX_TURN_CHARS characters each.
+   * @param {object} conv
+   * @param {string} role
+   * @param {string} text
+   */
+  _recordTurn(conv, role, text) {
+    conv.history.push({ role, text: String(text || '').slice(0, MAX_TURN_CHARS) });
+    if (conv.history.length > MAX_CONV_TURNS) {
+      conv.history.splice(0, conv.history.length - MAX_CONV_TURNS);
+    }
+  }
+
+  /** Register a sheet/doc against the thread's durable registry. */
+  _registerThreadFile(conv, { sheetId = '', sheetTitle = '', templateKey = '', docId = '', docTitle = '' } = {}) {
+    if (!Array.isArray(conv.sheets)) conv.sheets = [];
+    if (!Array.isArray(conv.docs)) conv.docs = [];
+    if (sheetId && !conv.sheets.some(s => s.sheetId === sheetId)) {
+      conv.sheets.push({ sheetId, title: sheetTitle || '', templateKey: templateKey || '' });
+      if (conv.sheets.length > 30) conv.sheets.splice(0, conv.sheets.length - 30);
+    }
+    if (docId && !conv.docs.some(d => d.docId === docId)) {
+      conv.docs.push({ docId, title: docTitle || '' });
+      if (conv.docs.length > 30) conv.docs.splice(0, conv.docs.length - 30);
+    }
+  }
+
+  /** Persist conversations to disk atomically so context survives restarts. */
+  _persistConversations() {
+    try {
+      const dir = path.dirname(CONVERSATIONS_FILE);
+      mkdirSync(dir, { recursive: true });
+      const snapshot = {};
+      for (const [key, conv] of this.conversations.entries()) {
+        if (!key.includes('::')) continue; // only persist canonical conv keys
+        snapshot[key] = {
+          history: (conv.history || []).slice(-MAX_CONV_TURNS),
+          lastSheetId: conv.lastSheetId || null,
+          lastDocId: conv.lastDocId || null,
+          lastTemplateKey: conv.lastTemplateKey || null,
+          threadId: conv.threadId || 'default',
+          threadTitle: conv.threadTitle || '',
+          sheets: (conv.sheets || []).slice(-30),
+          docs: (conv.docs || []).slice(-30),
+        };
+      }
+      const tmp = `${CONVERSATIONS_FILE}.${process.pid}.tmp`;
+      writeFileSync(tmp, JSON.stringify(snapshot) + '\n', { mode: 0o600 });
+      renameSync(tmp, CONVERSATIONS_FILE);
+    } catch { /* non-fatal: Drive sheet remains the durable store */ }
+  }
+
+  /** Load the per-thread sheet/doc registry + pointers from disk. */
+  _restoreConversationRegistry() {
+    try {
+      if (!existsSync(CONVERSATIONS_FILE)) return;
+      const data = JSON.parse(readFileSync(CONVERSATIONS_FILE, 'utf8'));
+      for (const [key, conv] of Object.entries(data || {})) {
+        this._diskRegistry.set(key, {
+          lastSheetId: conv.lastSheetId || null,
+          lastDocId: conv.lastDocId || null,
+          lastTemplateKey: conv.lastTemplateKey || null,
+          sheets: Array.isArray(conv.sheets) ? conv.sheets : [],
+          docs: Array.isArray(conv.docs) ? conv.docs : [],
+        });
+      }
+    } catch { /* ignore corrupt cache */ }
+  }
+
+  /* ---------- Live agent tuning ---------- */
+
+  /**
+   * Refresh the agent tuning (personality / model) from the browser-provided
+   * tuning file. Throttled to once per 60s unless forced.
+   * @param {boolean} [force]
+   */
+  async refreshAgentTuning(force = false) {
+    const now = Date.now();
+    if (!force && now - this._lastTuningFetchMs < 60_000) return;
+    this._lastTuningFetchMs = now;
+    try {
+      const tuningPath = path.join(os.homedir(), '.config', 'gcloud', 'waymark-agent-tuning.json');
+      if (existsSync(tuningPath)) {
+        const meta = JSON.parse(readFileSync(tuningPath, 'utf8'));
+        if (typeof meta?.tuning === 'string') this.agentTuning = meta.tuning;
+        if (meta?.model) this.agentModelOverride = meta.model;
+      }
+    } catch { /* keep current tuning */ }
+  }
+
+  /** Persist a tuning update (from the browser P2P control message). */
+  _saveAgentTuning({ tuning = '', model = '', agentName = '', updatedBy = '' } = {}) {
+    try {
+      const gcloudDir = path.join(os.homedir(), '.config', 'gcloud');
+      mkdirSync(gcloudDir, { recursive: true });
+      writeFileSync(
+        path.join(gcloudDir, 'waymark-agent-tuning.json'),
+        JSON.stringify({ tuning, model, agentName, updatedBy, updatedAt: new Date().toISOString() }, null, 2) + '\n',
+        { mode: 0o600 }
+      );
+      if (typeof tuning === 'string') this.agentTuning = tuning;
+      if (model) this.agentModelOverride = model;
+    } catch (err) {
+      console.warn(`[WaysideOrchestrator] ⚠️ Could not persist agent tuning: ${err.message}`);
+    }
+  }
+
+  /** Broadcast (or target) a live agent status pill to the chat UI. */
+  sendAgentStatus({ state = 'working', text = '', threadId = 'default', previewText = '', targetPeerId = '' } = {}) {
+    if (!this.peer) return;
+    const payload = {
+      type: 'typing',
+      text: null,
+      statusText: text || 'Working on your Waymark…',
+      state,
+      previewText: previewText || '',
+      peerId: this.peerId,
+      name: this.agentName,
+      threadId,
+      ts: Date.now(),
+    };
+    try {
+      if (targetPeerId && typeof this.peer.sendDataToPeer === 'function') {
+        if (this.peer.sendDataToPeer(targetPeerId, payload)) return;
+      }
+      this.peer.broadcast(payload);
+    } catch { /* best-effort */ }
   }
 
   /**
@@ -930,6 +1130,8 @@ export class WaysideOrchestrator {
       throw new Error('WaysideOrchestrator requires a valid sheetId (Share Ledger).');
     }
     this.running = true;
+    this._restoreConversationRegistry();
+    await this.refreshAgentTuning(true).catch(() => {});
     if (!this.userEmail) {
       this.userEmail = await resolveCurrentUserEmail();
     }
@@ -986,7 +1188,22 @@ export class WaysideOrchestrator {
           lastTemplateKey: null,
           threadId,
           threadTitle: threadTitle || '',
+          sheets: [],
+          docs: [],
         };
+        // Hydrate the durable sheet/doc registry + pointers once per thread so a
+        // restart still knows which Waymarks belong here (incl. templateKey).
+        if (!conv._hydrated) {
+          const reg = this._diskRegistry.get(convKey);
+          if (reg) {
+            if (!conv.lastSheetId && reg.lastSheetId) conv.lastSheetId = reg.lastSheetId;
+            if (!conv.lastDocId && reg.lastDocId) conv.lastDocId = reg.lastDocId;
+            if (!conv.lastTemplateKey && reg.lastTemplateKey) conv.lastTemplateKey = reg.lastTemplateKey;
+            if (Array.isArray(reg.sheets) && reg.sheets.length) conv.sheets = reg.sheets.slice(-30);
+            if (Array.isArray(reg.docs) && reg.docs.length) conv.docs = reg.docs.slice(-30);
+          }
+          conv._hydrated = true;
+        }
         if (threadTitle && !conv.threadTitle) conv.threadTitle = threadTitle;
         if (/^\/?(clear|reset)(\s+(context|history|chat|thread))?$/i.test(String(rawText).trim())) {
           conv.history = [];
@@ -994,11 +1211,7 @@ export class WaysideOrchestrator {
           conv.lastDocId = null;
           conv.lastTemplateKey = null;
         } else {
-          conv.history.push({
-            role: isAi ? this.agentName : (rawSender || ownerKey),
-            text: String(rawText).slice(0, 300),
-          });
-          if (conv.history.length > 10) conv.history.splice(0, conv.history.length - 10);
+          this._recordTurn(conv, isAi ? this.agentName : (rawSender || ownerKey), String(rawText));
           const foundSheet = extractSpreadsheetId(String(rawLink || '')) || extractSpreadsheetId(String(rawText || ''));
           if (foundSheet) conv.lastSheetId = foundSheet;
         }
@@ -1019,7 +1232,7 @@ export class WaysideOrchestrator {
   async runOnce() {
     await this._seedLedgerState();
     await this.pollChatTab();
-    await this._processingQueue;
+    await this._drainQueues();
     await this.publishPresence('offline').catch(() => {});
     this.running = false;
     console.log('[WaysideOrchestrator] Single polling pass complete.');
@@ -1094,6 +1307,33 @@ export class WaysideOrchestrator {
 
   handleWebRtcMessage(remotePeerId, data) {
     if (!data) return;
+
+    // Live agent tuning (personality/model) pushed from the browser UI.
+    if (data.type === 'agent-tuning-update') {
+      const sender = String(data.sender || data.updatedBy || '').trim().toLowerCase();
+      this._saveAgentTuning({
+        tuning: typeof data.tuning === 'string' ? data.tuning : '',
+        model: data.model || '',
+        agentName: data.agentName || this.agentName,
+        updatedBy: sender,
+      });
+      this._lastTuningFetchMs = Date.now();
+      const ack = {
+        type: 'agent-tuning-ack',
+        ok: true,
+        requestId: data.requestId || '',
+        sender: this.agentEmail,
+        ts: Date.now(),
+      };
+      const peer = this.peer || this.webrtcPeer;
+      if (peer) {
+        try {
+          if (typeof peer.sendDataToPeer === 'function' && peer.sendDataToPeer(remotePeerId, ack)) return;
+          peer.broadcast(ack);
+        } catch {}
+      }
+      return;
+    }
 
     // Handle P2P OAuth credential tunnel setup from the Waymark browser frontend
     if (data.type === 'agent-oauth-setup' && data.tokenBundle) {
@@ -1281,11 +1521,28 @@ export class WaysideOrchestrator {
     if (this.processedMessageIds.has(item.messageId)) return;
     this.processedMessageIds.add(item.messageId);
 
-    this._processingQueue = this._processingQueue
+    // Instant feedback: the sender sees a typing indicator + "Thinking…" pill
+    // immediately, even while this task waits behind others on its own thread.
+    const threadId = item.threadId || 'default';
+    this.broadcastTyping(threadId);
+    this.sendAgentStatus({ state: 'queued', text: 'Thinking…', threadId, targetPeerId: item.remotePeerId });
+
+    // Per-conversation queue: the same sender+thread is serialized (no glare),
+    // but different people / threads run concurrently (bounded by the agy slot).
+    const senderKey = String(item.sender || this.userEmail || 'unknown').toLowerCase();
+    const convKey = `${senderKey}::${threadId}`;
+    const prev = this._convQueues.get(convKey) || Promise.resolve();
+    const next = prev
       .then(() => this.processMessage(item))
       .catch(err => {
         console.error(`[WaysideOrchestrator] Error processing message ${item.messageId}:`, err);
       });
+    this._convQueues.set(convKey, next);
+    this._inflight.add(next);
+    next.finally(() => {
+      this._inflight.delete(next);
+      if (this._convQueues.get(convKey) === next) this._convQueues.delete(convKey);
+    });
   }
 
   /**
@@ -1368,7 +1625,7 @@ export class WaysideOrchestrator {
     console.log(`[WaysideOrchestrator] 📨 Processing from ${sender} (thread: ${activeThreadId}): "${text}"`);
 
     // 1. Send immediate typing indicator
-    this.broadcastTyping();
+    this.broadcastTyping(activeThreadId);
 
     const senderKey = (sender || this.userEmail || 'unknown').toLowerCase();
     const convKey = `${senderKey}::${activeThreadId}`;
@@ -1415,8 +1672,15 @@ export class WaysideOrchestrator {
     // 2. Classify intent
     const classification = classifyMessage(text);
     const explicitSheetId = extractSpreadsheetId(text);
-    const isFollowUp = /\b(add|append|update|change|edit|remove|delete|mark|complete|move|set|search|find|show|list|what'?s\s+on|in\s+it|to\s+it|that\s+sheet)\b/i.test(text)
-      && !/\b(create|build|make|generate|start|new)\b/i.test(text);
+    // Reuse the thread's current sheet for edits/adjustments. Do NOT drop the
+    // context just because the message contains "make"/"create"/"new" — "make
+    // the budget $500" must still target the existing budget. Only a request for
+    // a clearly DISTINCT new artifact forces a fresh sheet.
+    const explicitNew = /\b(new|another|separate|different|fresh)\b[^.]*\b(sheet|spreadsheet|board|list|tracker|plan|itinerary|budget|doc|document|kanban|recipe|roster)\b/i.test(text)
+      || /\bstart\s+over\b/i.test(text);
+    const editOrReference = /\b(add|append|update|change|edit|remove|delete|mark|complete|move|set|rename|adjust|fix|put|make|increase|decrease|search|find|show|list)\b/i.test(text)
+      || /\b(it|that|this|there|the\s+(sheet|board|list|budget|plan|itinerary|tracker|doc)|row\s*\d+)\b/i.test(text);
+    const isFollowUp = Boolean(conv.lastSheetId) && !explicitNew && editOrReference;
     const targetSheetId = explicitSheetId || (isFollowUp ? conv.lastSheetId : null);
     const effectiveTemplateKey = classification.templateKey || (targetSheetId ? conv.lastTemplateKey : null);
 
@@ -1428,23 +1692,61 @@ export class WaysideOrchestrator {
     let shouldLinkDoc = false;
     let createdDocTitle = null;
 
+    const staticIntro = `Hello ${friendlyName}! 👋 I'm **${this.agentName}**, your autonomous assistant inside The Wayside.\n\n`
+      + `I can create, inspect, search, and update sheets across all ${CATALOG.templates?.length || 41} Waymark templates — including Kanban, Budget, Travel, Meal, CRM, Recipes, Party, and Checklists.\n\n`
+      + `Try asking me something like:\n`
+      + `• *"Create a 4-day travel itinerary for Paris in spring"*\n`
+      + `• *"Make a weekly meal plan for 2200 kcal high protein"*\n`
+      + `• *"Build a sprint backlog for a new mobile app"*`;
+
     if (classification.isConversation || classification.isHelp) {
-      replyText = `Hello ${friendlyName}! 👋 I'm **${this.agentName}**, your autonomous assistant inside The Wayside.\n\n`
-        + `I can create, inspect, search, and update sheets across all ${CATALOG.templates?.length || 41} Waymark templates — including Kanban, Budget, Travel, Meal, CRM, Recipes, Party, and Checklists.\n\n`
-        + `Try asking me something like:\n`
-        + `• *"Create a 4-day travel itinerary for Paris in spring"*\n`
-        + `• *"Make a weekly meal plan for 2200 kcal high protein"*\n`
-        + `• *"Build a sprint backlog for a new mobile app"*`;
+      // Route greetings/help through agy in a fast, no-MCP conversational mode so
+      // the reply reflects the configured personality and thread context — fall
+      // back to the friendly static intro only if agy is unavailable or errors.
+      await this.refreshAgentTuning().catch(() => {});
+      let typingTimer = null;
+      try {
+        if (fromWebRtc) this.sendAgentStatus({ state: 'thinking', text: 'Thinking…', threadId: activeThreadId, targetPeerId: remotePeerId });
+        typingTimer = setInterval(() => this.broadcastTyping(activeThreadId), 3500);
+        const convContext = conv.history.length > 0
+          ? `Recent conversation:\n${conv.history.slice(-6).map(h => `- ${h.role}: ${h.text}`).join('\n')}`
+          : '';
+        await this._acquireAgySlot();
+        let convResult;
+        try {
+          convResult = await runAgyTask({
+            task: text,
+            isConversation: true,
+            tuning: this.agentTuning,
+            context: convContext,
+            expectedEmail: '',
+            model: this.agentModelOverride || undefined,
+          });
+        } finally {
+          this._releaseAgySlot();
+        }
+        replyText = convResult.ok && convResult.output ? convResult.output : staticIntro;
+      } catch {
+        replyText = staticIntro;
+      } finally {
+        if (typingTimer) clearInterval(typingTimer);
+      }
     } else {
       if (fromWebRtc) {
-        this.broadcastTyping();
+        this.broadcastTyping(activeThreadId);
       }
+      await this.refreshAgentTuning().catch(() => {});
 
       const contextLines = [`User '${sender}' requested this in Wayside social chat.`];
-      if (conv.lastSheetId) contextLines.push(`Most recent Waymark spreadsheet in conversation: ${conv.lastSheetId}`);
-      if (conv.lastDocId) contextLines.push(`Most recent Google Doc in conversation: ${conv.lastDocId}`);
+      if (conv.threadTitle) contextLines.push(`Active thread: ${conv.threadTitle}`);
+      if (conv.lastSheetId) contextLines.push(`Most recent Waymark spreadsheet in this thread: ${conv.lastSheetId}`);
+      if (conv.lastDocId) contextLines.push(`Most recent Google Doc in this thread: ${conv.lastDocId}`);
+      const threadSheets = Array.isArray(conv.sheets) ? conv.sheets.slice(-10) : [];
+      if (threadSheets.length > 0) {
+        contextLines.push(`Sheets in this thread:\n${threadSheets.map(s => `- ${s.title || 'Untitled'}${s.templateKey ? ` [${s.templateKey}]` : ''}: ${s.sheetId}`).join('\n')}`);
+      }
       if (conv.history.length > 0) {
-        contextLines.push(`Recent conversation history:\n${conv.history.slice(-4).map(h => `- ${h.role}: ${h.text}`).join('\n')}`);
+        contextLines.push(`Recent conversation history:\n${conv.history.slice(-8).map(h => `- ${h.role}: ${h.text}`).join('\n')}`);
       }
 
       console.log(`[WaysideOrchestrator] 🚀 Dispatching to AGY (template: ${effectiveTemplateKey || 'auto'}, sheet: ${targetSheetId || 'none'}, codeTask: ${Boolean(classification.isCodeTask)})...`);
@@ -1461,11 +1763,11 @@ export class WaysideOrchestrator {
         const ackText = `🛠️ **Starting work on your request:**\n> "${text}"\n\nI'm checking out a feature branch, implementing the code changes, and opening a Pull Request for review. I'll post the branch and PR link here as soon as it's up on GitHub! 🚀`;
 
         // Update conversation memory with user message and acknowledgment
-        conv.history.push({ role: sender, text: text.slice(0, 300) });
-        conv.history.push({ role: this.agentName, text: ackText.slice(0, 300) });
-        if (conv.history.length > 10) conv.history.splice(0, conv.history.length - 10);
+        this._recordTurn(conv, sender, text);
+        this._recordTurn(conv, this.agentName, ackText);
         this.conversations.set(convKey, conv);
         if (activeThreadId === 'default') this.conversations.set(senderKey, conv);
+        this._persistConversations();
 
         // Immediate acknowledgment delivered into the Wayside chat
         await this.deliverReply({
@@ -1479,8 +1781,12 @@ export class WaysideOrchestrator {
         // Run the agent task asynchronously in the background so it can spin as needed without timing out or blocking chat
         (async () => {
           let typingTimer = null;
+          await this._acquireAgySlot();
           try {
-            typingTimer = setInterval(() => this.broadcastTyping(), 8000);
+            typingTimer = setInterval(() => {
+              this.broadcastTyping(activeThreadId);
+              this.sendAgentStatus({ state: 'coding', text: 'Implementing & opening a PR…', threadId: activeThreadId, targetPeerId: remotePeerId });
+            }, 3500);
             console.log(`[WaysideOrchestrator] 🚀 Async background code task starting for '${senderKey}' in thread '${activeThreadId}'...`);
             const agyResult = await runAgyTask({
               task: text,
@@ -1488,9 +1794,13 @@ export class WaysideOrchestrator {
               sheetId: null,
               context: contextLines.join('\n'),
               shareWith: shareTargets,
+              tuning: this.agentTuning,
               tokenPath: identity.tokenPath,
               expectedEmail: '',
               isCodeTask: true,
+              onProgress: ({ statusText }) => {
+                if (statusText) this.sendAgentStatus({ state: 'coding', text: statusText, threadId: activeThreadId, targetPeerId: remotePeerId });
+              },
             });
 
             let completionText = '';
@@ -1501,9 +1811,9 @@ export class WaysideOrchestrator {
               completionText = `⚠️ I couldn't complete that PR request${who}.\n\n${agyResult.error}${agyResult.logFile ? `\n\nLog: \`${agyResult.logFile}\`` : ''}`;
             }
 
-            conv.history.push({ role: this.agentName, text: completionText.slice(0, 300) });
-            if (conv.history.length > 10) conv.history.splice(0, conv.history.length - 10);
+            this._recordTurn(conv, this.agentName, completionText);
             this.conversations.set(convKey, conv);
+            this._persistConversations();
 
             await this.deliverReply({
               replyText: completionText,
@@ -1523,6 +1833,7 @@ export class WaysideOrchestrator {
               threadTitle: conv.threadTitle,
             }).catch(() => {});
           } finally {
+            this._releaseAgySlot();
             if (typingTimer) clearInterval(typingTimer);
           }
         })();
@@ -1556,16 +1867,35 @@ export class WaysideOrchestrator {
           }
         }
 
-        const agyResult = await runAgyTask({
-          task: text,
-          templateKey: effectiveTemplateKey,
-          sheetId: targetSheetId,
-          context: contextLines.join('\n'),
-          shareWith: shareTargets,
-          tokenPath: identity.tokenPath,
-          expectedEmail: identity.actingAs,
-          isCodeTask: false,
-        });
+        let typingTimer = null;
+        await this._acquireAgySlot();
+        let agyResult;
+        try {
+          typingTimer = setInterval(() => {
+            this.broadcastTyping(activeThreadId);
+            this.sendAgentStatus({ state: 'working', text: 'Working on your Waymark…', threadId: activeThreadId, targetPeerId: remotePeerId });
+          }, 3500);
+          agyResult = await runAgyTask({
+            task: text,
+            templateKey: effectiveTemplateKey,
+            candidateTemplates: classification.candidateTemplates || [],
+            sheetId: targetSheetId,
+            threadSheets,
+            context: contextLines.join('\n'),
+            shareWith: shareTargets,
+            tuning: this.agentTuning,
+            tokenPath: identity.tokenPath,
+            expectedEmail: identity.actingAs,
+            isCodeTask: false,
+            model: this.agentModelOverride || undefined,
+            onProgress: ({ statusText }) => {
+              if (statusText) this.sendAgentStatus({ state: 'working', text: statusText, threadId: activeThreadId, targetPeerId: remotePeerId });
+            },
+          });
+        } finally {
+          this._releaseAgySlot();
+          if (typingTimer) clearInterval(typingTimer);
+        }
 
         if (agyResult.ok) {
           replyText = agyResult.output;
@@ -1575,6 +1905,16 @@ export class WaysideOrchestrator {
           shouldLinkDoc = Boolean(createdDocId && !this.knownSharedDocIds.has(createdDocId));
           createdSheetTitle = agyResult.sheetTitle || (classification.templateName ? `${classification.templateName} Plan` : 'Shared Waymark');
           createdDocTitle = agyResult.docTitle || 'Waymark Document';
+          // Register EVERY sheet/doc the task produced so multi-artifact requests
+          // are all tracked against the thread and shared downstream.
+          for (const s of (agyResult.allSheets || [])) {
+            this._registerThreadFile(conv, { sheetId: s.sheetId, sheetTitle: s.title, templateKey: effectiveTemplateKey || '' });
+          }
+          for (const d of (agyResult.allDocs || [])) {
+            this._registerThreadFile(conv, { docId: d.docId, docTitle: d.title });
+          }
+          if (createdSheetId) this._registerThreadFile(conv, { sheetId: createdSheetId, sheetTitle: createdSheetTitle, templateKey: effectiveTemplateKey || '' });
+          if (createdDocId) this._registerThreadFile(conv, { docId: createdDocId, docTitle: createdDocTitle });
         } else if (agyResult.identityMismatch) {
           console.error(`[WaysideOrchestrator] ❌ Identity guard tripped for '${senderKey}': ${agyResult.error}`);
           replyText = WaysideOrchestrator.buildConnectAccountReply(friendlyName, 'identity-mismatch');
@@ -1587,9 +1927,8 @@ export class WaysideOrchestrator {
     }
 
     // Update per-sender & per-thread conversation memory
-    conv.history.push({ role: sender, text: text.slice(0, 300) });
-    conv.history.push({ role: this.agentName, text: replyText.slice(0, 300) });
-    if (conv.history.length > 10) conv.history.splice(0, conv.history.length - 10);
+    this._recordTurn(conv, sender, text);
+    this._recordTurn(conv, this.agentName, replyText);
     if (createdSheetId) conv.lastSheetId = createdSheetId;
     if (createdDocId) conv.lastDocId = createdDocId;
     if (effectiveTemplateKey) conv.lastTemplateKey = effectiveTemplateKey;
@@ -1597,6 +1936,7 @@ export class WaysideOrchestrator {
     if (activeThreadId === 'default') {
       this.conversations.set(senderKey, conv);
     }
+    this._persistConversations();
 
     // 3. Deliver reply
     const recipientEmail = sender.includes('@') ? sender : (this.userEmail || sender);
@@ -1616,10 +1956,10 @@ export class WaysideOrchestrator {
     });
   }
 
-  broadcastTyping() {
+  broadcastTyping(threadId = 'default') {
     if (this.peer) {
       try {
-        this.peer.broadcast({ type: 'typing', text: null, peerId: this.peerId, name: this.agentName, ts: Date.now() });
+        this.peer.broadcast({ type: 'typing', text: null, peerId: this.peerId, name: this.agentName, threadId, ts: Date.now() });
       } catch {}
     }
   }

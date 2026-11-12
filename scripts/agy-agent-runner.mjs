@@ -11,7 +11,7 @@ import { execFile, spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync, realpathSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, realpathSync, readFileSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -191,6 +191,8 @@ export function extractFileReferences(text) {
   const docId = extractDocId(text);
   let sheetTitle = null;
   let docTitle = null;
+  const allSheets = [];
+  const allDocs = [];
 
   if (text) {
     const mdSheet = text.match(/\[([^\]]+)\]\((?:#\/(?:sheet|public)\/|https?:\/\/[^\s)]*\/spreadsheets\/d\/)[a-zA-Z0-9_-]{25,}/);
@@ -206,6 +208,28 @@ export function extractFileReferences(text) {
         if (docId) docTitle = jsonTitle[1].trim();
       }
     }
+
+    // Collect EVERY sheet/doc the response links so a multi-step prompt that
+    // creates several artifacts shares and registers them all, not just the first.
+    const sheetLinkRe = /\[([^\]]+)\]\((?:#\/(?:sheet|public)\/|https?:\/\/[^\s)]*\/spreadsheets\/d\/)([a-zA-Z0-9_-]{25,})/g;
+    let m;
+    const seenSheets = new Set();
+    while ((m = sheetLinkRe.exec(text)) !== null) {
+      const id = m[2];
+      if (id && !seenSheets.has(id)) {
+        seenSheets.add(id);
+        allSheets.push({ sheetId: id, title: m[1].trim() });
+      }
+    }
+    const docLinkRe = /\[([^\]]+)\]\(https?:\/\/[^\s)]*\/document\/d\/([a-zA-Z0-9_-]{25,})/g;
+    const seenDocs = new Set();
+    while ((m = docLinkRe.exec(text)) !== null) {
+      const id = m[2];
+      if (id && !seenDocs.has(id)) {
+        seenDocs.add(id);
+        allDocs.push({ docId: id, title: m[1].trim() });
+      }
+    }
   }
 
   return {
@@ -213,6 +237,8 @@ export function extractFileReferences(text) {
     docId,
     sheetTitle,
     docTitle,
+    allSheets,
+    allDocs,
   };
 }
 
@@ -235,11 +261,18 @@ export function extractPrReferences(text) {
 /**
  * Build the prompt delivered to agy.
  */
-export function buildAgyPrompt({ task, templateKey, sheetId, context = '', shareWith = [], isCodeTask = false }) {
+export function buildAgyPrompt({ task, templateKey, candidateTemplates = [], sheetId, threadSheets = [], context = '', shareWith = [], tuning = '', isCodeTask = false, isConversation = false }) {
   const parts = [];
   const validShareWith = (Array.isArray(shareWith) ? shareWith : [])
     .map(e => String(e || '').trim().toLowerCase())
     .filter(e => e && e.includes('@') && !e.endsWith('.internal') && !e.endsWith('.local'));
+
+  const tuningText = String(tuning || '').trim();
+  const injectTuning = () => {
+    if (tuningText) {
+      parts.push(`Agent Personality & Custom Tuning Instructions (CRITICAL — follow this voice, style, and behavioral guidance):\n${tuningText}`);
+    }
+  };
 
   const detectedCodeTask = Boolean(isCodeTask) ||
     /\b(pull\s*request|pr)\b/i.test(task) ||
@@ -247,9 +280,24 @@ export function buildAgyPrompt({ task, templateKey, sheetId, context = '', share
     /\b(in\s+the\s+(?:waymark\s+)?repo|codebase|repository|waymark\s+branch)\b/i.test(task) ||
     /\b(put\s+up\s+(?:a\s+)?(?:new\s+)?(?:waymark\s+)?branch|put\s+up\s+for\s+pr|make\s+(?:a\s+)?pr)\b/i.test(task);
 
+  // Fast conversational / help turns: no MCP tools required, but still speak in
+  // the configured personality and reference the thread so replies feel natural.
+  if (isConversation && !detectedCodeTask) {
+    parts.push(`You are Waymark AI, a friendly, concise assistant inside The Wayside social chat.`);
+    injectTuning();
+    parts.push(`Waymark renders Google Sheets as interactive tools (Kanban boards, budgets, travel itineraries, meal plans, recipes, checklists, CRM pipelines, and 30+ more). You can create, read, search, and update any of them when asked.`);
+    if (context) {
+      parts.push(`Conversation context:\n${context}`);
+    }
+    parts.push(`\nUser Message: ${task}`);
+    parts.push(`\nReply conversationally in 1-3 short sentences. Do NOT call any tools. If the user hints at a task (e.g. a trip, a budget, a list), warmly offer a concrete example of what you could build for them.`);
+    return parts.join('\n\n');
+  }
+
   if (detectedCodeTask) {
     parts.push(`You are Waymark AI, an autonomous software engineer running directly on bare metal on the Waymark repository at '${ROOT}'.`);
     parts.push(`You have full execution and tool access on this machine (file reading/writing, terminal commands, git, gh CLI, npm, node).`);
+    injectTuning();
 
     if (context) {
       parts.push(`Conversation context:\n${context}`);
@@ -257,6 +305,22 @@ export function buildAgyPrompt({ task, templateKey, sheetId, context = '', share
 
     parts.push(`\nUser Request: ${task}`);
     parts.push(`\nEngineering Instructions:
+1. Scope Discipline & Anti-Rabbit Hole Rules:
+   - Stay strictly focused on the user's specific request and minimum necessary files.
+   - Do NOT run full-repo test suites (e.g. \`npx playwright test\` or whole-repo audits) — doing so encounters unrelated pre-existing test failures and stalls execution.
+   - Do NOT investigate, fix, or debug pre-existing failures or warnings in unrelated modules.
+   - Only perform fast syntax checks (e.g. \`node --check <file>\`) or run a targeted test that directly tests the code you modified.
+   - If you encounter an unrelated test failure or warning, ignore it and do NOT let it block you. Note it in the PR description under 'Notes' if relevant.
+   - Before switching branches, verify the working tree is clean (\`git status --porcelain\`); prefer an isolated git worktree under \`.waymark/worktrees/<slug>\` so a background PR task never corrupts uncommitted work in the primary checkout.
+   - As soon as your edits are complete and pass syntax checks, proceed directly to commit, push, and open the PR.
+2. Branch & Implement:
+   - Check out a new descriptive feature branch: \`git checkout -b <branch-name>\` (e.g. \`feature/<descriptive-name>\`).
+   - Implement the requested changes directly in the relevant files.
+   - Stage and commit changes promptly: \`git commit -am "<descriptive message>"\`.
+3. Push & Create Pull Request:
+   - Push the branch to GitHub: \`git push -u origin <branch-name>\`.
+   - Open a Pull Request non-interactively using GitHub CLI:
+     \`gh pr create --base main --head <branch-name> --title "<Clear Title>" --body "<Detailed description of changes>"\`
 1. Scope Discipline & Anti-Rabbit Hole Rules:
    - Stay strictly focused on the user's specific request and minimum necessary files.
    - Do NOT run full-repo test suites (e.g. \`npx playwright test\` or whole-repo audits) — doing so encounters unrelated pre-existing test failures and stalls execution.
@@ -283,14 +347,28 @@ export function buildAgyPrompt({ task, templateKey, sheetId, context = '', share
   }
 
   parts.push(`You are Waymark AI, an autonomous data assistant.`);
+  injectTuning();
   if (templateKey) {
-    parts.push(`You are operating in the domain of the '${templateKey}' template. Use the 'waymark-${templateKey}' skill if needed.`);
+    parts.push(`Primary detected template: '${templateKey}'. Use the 'waymark-${templateKey}' skill when it fits, but you are NOT forced to — if the request clearly spans other domains, use 'waymark-orchestrator' or the matching template tools instead.`);
   } else {
     parts.push(`Use the 'waymark-orchestrator' skill to select the appropriate Waymark template and actions.`);
   }
 
+  const otherCandidates = (Array.isArray(candidateTemplates) ? candidateTemplates : [])
+    .filter(c => c && c.key && c.key !== templateKey);
+  if (otherCandidates.length > 0) {
+    parts.push(`Secondary template candidates (use if the request spans multiple domains): ${otherCandidates.map(c => `${c.name || c.key} (waymark-${c.key})`).join(', ')}.`);
+  }
+
   if (sheetId) {
     parts.push(`Target Spreadsheet ID: ${sheetId}`);
+    parts.push(`If the user is asking to modify, add to, query, or adjust an existing sheet from this conversation, operate on that Target Spreadsheet ID (waymark_get_sheet / waymark_add_entry / waymark_update_entry). Only call waymark_create_sheet when the user wants a distinct NEW spreadsheet.`);
+  }
+
+  const threadSheetList = (Array.isArray(threadSheets) ? threadSheets : [])
+    .filter(s => s && s.sheetId);
+  if (threadSheetList.length > 0) {
+    parts.push(`Sheets already created in this conversation thread (reference these by ID when the user refers to them):\n${threadSheetList.map(s => `- ${s.title || 'Untitled'}${s.templateKey ? ` [${s.templateKey}]` : ''}: ${s.sheetId}`).join('\n')}`);
   }
 
   if (context) {
@@ -324,6 +402,24 @@ export function buildAgyPrompt({ task, templateKey, sheetId, context = '', share
   return parts.join('\n\n');
 }
 
+/**
+ * Map a line of agy output to a short, human-readable progress label so the
+ * chat UI can show live step-by-step status while the agent works.
+ * @param {string} line
+ * @returns {string} label, or '' when the line is not a recognizable milestone
+ */
+function milestoneLabel(line) {
+  const l = String(line || '').toLowerCase();
+  if (/waymark_create_sheet|create_spreadsheet/.test(l)) return '📊 Creating a new Waymark sheet…';
+  if (/waymark_(update_entry|add_entry)/.test(l)) return '✏️ Updating rows…';
+  if (/waymark_(get_sheet|search_entries)/.test(l)) return '🔍 Reading your Waymarks…';
+  if (/waymark_list_files|waymark_list_templates/.test(l)) return '🗂️ Searching your Waymarks…';
+  if (/waymark_(create_doc|append_doc|get_doc)/.test(l)) return '📝 Writing a Google Doc…';
+  if (/waymark_(get_links|link_entries)/.test(l)) return '🔗 Linking related Waymarks…';
+  if (/git (checkout|commit|push)|gh pr create/.test(l)) return '🛠️ Implementing & opening a PR…';
+  return '';
+}
+
 function killChildProcessTree(child) {
   if (!child || !child.pid) return;
   if (process.platform === 'win32') {
@@ -342,7 +438,7 @@ function killChildProcessTree(child) {
   }, 1500).unref?.();
 }
 
-function spawnSafe(command, args, { cwd, timeoutMs, env, maxBuffer = 10 * 1024 * 1024 }) {
+function spawnSafe(command, args, { cwd, timeoutMs, env, maxBuffer = 10 * 1024 * 1024, onProgress = null }) {
   return new Promise((resolve, reject) => {
     const isWin = process.platform === 'win32';
     const child = spawn(command, args, {
@@ -358,6 +454,25 @@ function spawnSafe(command, args, { cwd, timeoutMs, env, maxBuffer = 10 * 1024 *
     let stderr = '';
     let timedOut = false;
     let settled = false;
+    let lineBuf = '';
+    let lastProgressMs = 0;
+
+    const emitProgress = (stream, chunkStr) => {
+      if (typeof onProgress !== 'function') return;
+      lineBuf += chunkStr;
+      let nl;
+      while ((nl = lineBuf.indexOf('\n')) >= 0) {
+        const line = lineBuf.slice(0, nl);
+        lineBuf = lineBuf.slice(nl + 1);
+        const statusText = milestoneLabel(line);
+        const now = Date.now();
+        // Throttle to at most ~1 event / 800ms, but always surface a milestone.
+        if (statusText || now - lastProgressMs >= 800) {
+          lastProgressMs = now;
+          try { onProgress({ stream, line, statusText }); } catch {}
+        }
+      }
+    };
 
     const timer = setTimeout(() => {
       timedOut = true;
@@ -365,10 +480,14 @@ function spawnSafe(command, args, { cwd, timeoutMs, env, maxBuffer = 10 * 1024 *
     }, timeoutMs);
 
     child.stdout.on('data', (chunk) => {
-      if (stdout.length < maxBuffer) stdout += chunk.toString('utf8');
+      const s = chunk.toString('utf8');
+      if (stdout.length < maxBuffer) stdout += s;
+      emitProgress('stdout', s);
     });
     child.stderr.on('data', (chunk) => {
-      if (stderr.length < maxBuffer) stderr += chunk.toString('utf8');
+      const s = chunk.toString('utf8');
+      if (stderr.length < maxBuffer) stderr += s;
+      emitProgress('stderr', s);
     });
 
     child.on('error', (err) => {
@@ -458,6 +577,11 @@ export async function runAgyTask({
   tokenPath = null,
   expectedEmail = '',
   isCodeTask = false,
+  isConversation = false,
+  tuning = '',
+  candidateTemplates = [],
+  threadSheets = [],
+  onProgress = null,
   model = DEFAULT_MODEL,
   timeoutMs = null,
   cwd = ROOT,
@@ -469,7 +593,7 @@ export async function runAgyTask({
     /\b(put\s+up\s+(?:a\s+)?(?:new\s+)?(?:waymark\s+)?branch|put\s+up\s+for\s+pr|make\s+(?:a\s+)?pr)\b/i.test(task);
 
   const effectiveTimeoutMs = timeoutMs || (effectiveIsCodeTask ? DEFAULT_CODE_TIMEOUT_MS : DEFAULT_TIMEOUT_MS);
-  const prompt = buildAgyPrompt({ task, templateKey, sheetId, context, shareWith, isCodeTask: effectiveIsCodeTask });
+  const prompt = buildAgyPrompt({ task, templateKey, candidateTemplates, sheetId, threadSheets, context, shareWith, tuning, isCodeTask: effectiveIsCodeTask, isConversation });
   const start = Date.now();
   const { bin: agyBin, useShell } = resolveAgyBinary();
 
@@ -482,6 +606,7 @@ export async function runAgyTask({
   // Run as the actual requester (the guest driving a shared agent), not the
   // agent owner. Setting this explicitly makes every MCP child deterministic.
   const resolvedOAuth = resolveOAuthTokenPath({ tokenPath, homeDir, env: process.env });
+  let taskRequesterFile = '';
   if (resolvedOAuth) {
     childEnv.WAYMARK_OAUTH_TOKEN_PATH = resolvedOAuth;
   }
@@ -541,11 +666,40 @@ export async function runAgyTask({
     childEnv.WAYMARK_AGY_PROMPT = prompt;
   }
 
+  // Task-scoped requester pointer: immune to a second concurrent task
+  // overwriting the global waymark-active-requester.json mid-flight, so two
+  // people driving the agent at once never create files in each other's Drive.
+  // Created here (after the identity guard) so early returns never leak it; the
+  // finally block removes it once the subprocess completes.
+  if (resolvedOAuth) {
+    try {
+      const gcloudDir = path.join(homeDir, '.config', 'gcloud');
+      mkdirSync(gcloudDir, { recursive: true });
+      taskRequesterFile = path.join(
+        gcloudDir,
+        `waymark-requester-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.json`
+      );
+      writeFileSync(
+        taskRequesterFile,
+        JSON.stringify({
+          sender: (expectedEmail || actingAs || '').toLowerCase(),
+          tokenPath: resolvedOAuth,
+          updatedAt: Date.now(),
+        }, null, 2) + '\n',
+        { mode: 0o600 }
+      );
+      childEnv.WAYMARK_ACTIVE_REQUESTER_FILE = taskRequesterFile;
+    } catch {
+      taskRequesterFile = '';
+    }
+  }
+
   try {
     const { stdout, stderr } = await spawnSafe(execCmd, execArgs, {
       cwd,
       timeoutMs: effectiveTimeoutMs,
       env: childEnv,
+      onProgress: typeof onProgress === 'function' ? onProgress : null,
     });
 
     const output = (stdout || '').trim();
@@ -570,6 +724,8 @@ export async function runAgyTask({
       sheetTitle: refs.sheetTitle,
       docId: detectedDocId,
       docTitle: refs.docTitle,
+      allSheets: refs.allSheets || [],
+      allDocs: refs.allDocs || [],
       prUrl: prRefs.prUrl,
       prNumber: prRefs.prNumber,
       branch: prRefs.branch,
@@ -602,6 +758,10 @@ export async function runAgyTask({
       durationMs,
       logFile,
     };
+  } finally {
+    if (taskRequesterFile) {
+      try { rmSync(taskRequesterFile, { force: true }); } catch {}
+    }
   }
 }
 

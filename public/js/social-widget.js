@@ -161,8 +161,8 @@ export class SocialChatWidget {
           this.saveChatHistory();
         }
       },
-      onTyping: (name) => {
-        this.showTyping(name);
+      onTyping: (name, statusText = '') => {
+        this.showTyping(name, statusText);
       },
       onCallStateChanged: (state, details) => {
         this._handleCallStateChanged(state, details);
@@ -1082,11 +1082,14 @@ export class SocialChatWidget {
     this.input.value = '';
   }
 
-  showTyping(name) {
-    this.typingIndicator.textContent = `${name} is typing…`;
+  showTyping(name, statusText = '') {
+    const label = statusText ? `${name} is ${statusText}` : `${name} is typing…`;
+    this.typingIndicator.textContent = label;
     this.typingIndicator.classList.remove('hidden');
     clearTimeout(this._typingTimer);
-    this._typingTimer = setTimeout(() => this.typingIndicator.classList.add('hidden'), 3000);
+    // Live agent status steps refresh frequently; keep the pill visible a bit
+    // longer so step-by-step progress does not flicker out between updates.
+    this._typingTimer = setTimeout(() => this.typingIndicator.classList.add('hidden'), statusText ? 6000 : 3000);
   }
 
   setPassword(pw) {
